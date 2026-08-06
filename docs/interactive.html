@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive LQR / MPC line follower</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel-bg: #ffffff;
+    --fg: #1b1e24;
+    --muted: #5b6270;
+    --grid: #e2e4e9;
+    --border: #d8dbe1;
+    --accent: #2563eb;
+    --ok: #157a3d;
+    --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel-bg: #1c1f26;
+      --fg: #e7e9ee;
+      --muted: #9aa2b1;
+      --grid: #333844;
+      --border: #333844;
+      --accent: #6ea8fe;
+      --ok: #4fd17a;
+      --bad: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  header {
+    padding: 14px 20px 0 20px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px 0; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  nav {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 0 20px 10px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    background: none; border: 1px solid var(--border); color: var(--fg);
+    padding: 7px 13px; border-radius: 7px 7px 0 0; cursor: pointer;
+    font-size: 13.5px; font-family: inherit;
+  }
+  nav button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  main { padding: 16px 20px 40px 20px; max-width: 1180px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .lede { color: var(--muted); max-width: 78ch; margin: 4px 0 14px 0; font-size: 13.8px; }
+  .lede a { color: var(--accent); }
+  .grid2 {
+    display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .panel + .panel { margin-top: 14px; }
+  .panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 0 0 10px 0; font-weight: 600; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-row label {
+    display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px;
+  }
+  .slider-row label .val { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+  .slider-row input[type=range] { width: 100%; }
+  .readout-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 13px;
+  }
+  .readout-grid div.k { color: var(--muted); }
+  .readout-grid div.v { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+  .readout-grid div.v.ok { color: var(--ok); }
+  .readout-grid div.v.bad { color: var(--bad); }
+  .plotwrap { margin-bottom: 14px; }
+  .plotwrap .caption { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  canvas { display: block; width: 100%; }
+  table.caltable { border-collapse: collapse; font-size: 13px; width: 100%; }
+  table.caltable td { padding: 3px 8px 3px 0; }
+  table.caltable td:first-child { color: var(--muted); }
+  table.caltable td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .banner {
+    background: #fff3cd; color: #664d03; border: 1px solid #ffe69c;
+    border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .banner { background: #3a2f10; color: #ffd97a; border-color: #5c4a10; }
+  }
+  .eqn { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; display: inline-block; margin: 2px 6px 2px 0; }
+  .shared-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+  .site-nav { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--panel-bg); }
+  .site-nav a { color: var(--muted); text-decoration: none; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; }
+  .site-nav a:hover { background: var(--grid); color: var(--fg); }
+  .site-nav a.active { background: var(--accent); color: #fff; }
+  .site-nav a.robot-btn { margin-left: auto; background: var(--ok); color: #fff; font-weight: 600; }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+    padding: 8px 14px; font-size: 13px; font-family: inherit; cursor: pointer; margin: 3px 6px 3px 0; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.secondary { background: var(--grid); color: var(--fg); }
+  .field { font-size: 13px; margin: 8px 0; display: flex; align-items: center; gap: 8px; }
+  .field input[type=number] { width: 80px; padding: 4px 6px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
+  .hw-status { font-size: 12.5px; margin: 8px 0; min-height: 1.4em; }
+  .hw-status.err { color: var(--bad); }
+  .hw-status.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+
+<div class="site-nav" id="site-nav">
+  <a href="/README.md">Home</a>
+  <a href="/docs/00-sim.md">00 · sim.py</a>
+  <a href="/docs/01-lqr.md">01 · LQR</a>
+  <a href="/docs/02-mpc.md">02 · MPC</a>
+  <a href="/docs/03-lqr-vs-mpc.md">03 · LQR vs MPC</a>
+  <a href="/docs/interactive.html" class="active">Interactive</a>
+  <a href="#robot" class="robot-btn" id="nav-robot-btn">🔌 Connect to robot</a>
+</div>
+
+<header>
+  <h1>Interactive LQR / MPC line follower</h1>
+  <div class="subtitle" id="cal-subtitle">loading calibration…</div>
+</header>
+
+<nav id="tabnav">
+  <button data-tab="robot" class="active">Your robot</button>
+  <button data-tab="bangbang">1. Bang-bang</button>
+  <button data-tab="pd">2. P / PD</button>
+  <button data-tab="lqr">3. LQR</button>
+  <button data-tab="mpc">5. MPC</button>
+</nav>
+
+<main>
+
+  <div id="cal-banner"></div>
+
+  <!-- ============================== TAB: ROBOT ============================== -->
+  <section class="tab active" id="tab-robot">
+    <p class="lede">These numbers came from <code>code/calibration.json</code> — the file
+      <code>code/calibrate.py</code> writes after you measure your own robot. Every
+      simulation on this page uses them, so the sliders below are showing you
+      <em>your</em> robot's behavior, not a generic reference build. Full background:
+      <a href="00-sim.md">docs/00-sim.md</a>.</p>
+
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <h3>Sample build</h3>
+          <img src="../assets/robot.jpg" alt="LEGO Education Double Motor + Color Sensor line follower, sensor mounted forward and downward-facing over black tape"
+               style="width:100%; border-radius:8px; display:block;">
+          <p class="shared-note">LEGO Education Double Motor + Color Sensor, sensor
+            mounted forward of the axle and downward-facing over the tape — see
+            "The robot" in the <a href="../README.md#the-robot">README</a>.</p>
+        </div>
+        <div class="panel">
+          <h3>Calibration</h3>
+          <table class="caltable" id="cal-table"></table>
+        </div>
+        <div class="panel" id="recal-panel">
+          <h3>Redo calibration</h3>
+          <div class="hw-status" id="recal-status">Checking for code/calibrate_server.py…</div>
+
+          <div id="recal-step-start">
+            <button class="btn" id="recal-connect-sensor">1/4 Connect sensor</button>
+          </div>
+
+          <div id="recal-step-sensor" style="display:none">
+            <div class="readout-grid">
+              <div class="k">live reflection</div><div class="v" id="recal-live">--</div>
+            </div>
+            <div class="field">
+              <button class="btn secondary" id="recal-sample-black">2/4 Sample BLACK (3s)</button>
+              <span class="shared-note" id="recal-black-result"></span>
+            </div>
+            <div class="field">
+              <button class="btn secondary" id="recal-sample-white">3/4 Sample WHITE (3s)</button>
+              <span class="shared-note" id="recal-white-result"></span>
+            </div>
+            <div class="field">
+              <label>Sensor window span (mm)</label>
+              <input type="number" id="recal-span" value="12" step="0.5">
+              <button class="btn secondary" id="recal-set-window">Set window</button>
+              <span class="shared-note" id="recal-window-result"></span>
+            </div>
+            <button class="btn" id="recal-to-motors">4/4 Disconnect sensor, connect motors</button>
+          </div>
+
+          <div id="recal-step-motors" style="display:none">
+            <p class="shared-note">Clear a straight run of at least 1 m before driving.</p>
+            <button class="btn secondary" id="recal-drive-test">Drive straight 2s at 100%</button>
+            <div class="field">
+              <label>Distance traveled (mm)</label>
+              <input type="number" id="recal-distance">
+            </div>
+            <div class="field">
+              <label>Track width (mm)</label>
+              <input type="number" id="recal-trackwidth">
+            </div>
+            <button class="btn" id="recal-save">Save calibration</button>
+          </div>
+
+          <div id="recal-done" style="display:none">
+            <p class="shared-note">Saved — the table above and every tab now use this run's numbers.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>The model (docs/00-sim.md &amp; 01-lqr.md)</h3>
+        <p style="margin-top:0">Two numbers describe the robot: lateral offset
+          <b>e</b> [mm] and heading error <b>θ</b> [rad]. Forward speed
+          <b>v</b> and curvature <b>κ</b> of the line drive them:</p>
+        <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
+        <div class="eqn">dθ/dt = ω − κ·v</div>
+        <p>ω [rad/s] is the yaw rate every controller below is choosing.
+          The sensor can only report <b>e</b> inside ±e_max — outside that window
+          the reading saturates and the robot goes "blind." That single hard
+          number, measured on the calibration page, is what breaks fixed-speed
+          LQR on sharp turns and is the whole reason MPC gets invented.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== TAB: BANG-BANG ============================== -->
+  <section class="tab" id="tab-bangbang">
+    <p class="lede"><code>if reflection &gt; threshold: turn left, else turn right</code> —
+      the simplest control law there is. It only uses the <em>sign</em> of the
+      error, so it can't help but overshoot and turn back, forever. Full
+      writeup: <a href="../README.md#session-1--bang-bang-and-why-it-wobbles">README, Session 1</a>.</p>
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <h3>Controls</h3>
+          <div class="slider-row">
+            <label>forward speed v <span class="val" id="bb-v-val"></span></label>
+            <input type="range" id="bb-v" min="50" max="300" step="5">
+          </div>
+          <div class="slider-row">
+            <label>turn rate ω_mag <span class="val" id="bb-w-val"></span></label>
+            <input type="range" id="bb-w" min="0.2" max="6" step="0.1">
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Result</h3>
+          <div class="readout-grid" id="bb-readout"></div>
+        </div>
+        <div class="panel">
+          <h3>Run on real robot</h3>
+          <div class="hw-status" id="bb-hw-status"></div>
+          <div class="field">
+            <label>duration (s)</label>
+            <input type="number" id="bb-hw-duration" value="8" min="2" max="30" step="1">
+            <button class="btn" id="bb-hw-run">▶ Run on robot</button>
+          </div>
+          <div class="readout-grid" id="bb-hw-readout"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="plotwrap">
+          <canvas id="bb-plot-e" data-aspect="0.42"></canvas>
+          <div class="caption">e(t) — dashed red lines are the sensor window ±e_max. Solid black =
+            simulated; green = your real robot's last run, if any.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== TAB: PD ============================== -->
+  <section class="tab" id="tab-pd">
+    <p class="lede">Proportional (and PD) control, entering a turn of radius R at
+      constant speed. Push k_p up and it oscillates on entry; push it down and it
+      settles into a large steady-state offset once it's in the turn — "corners
+      badly." Full writeup: <a href="../README.md#session-2--p-then-pd-then-the-tuning-wall">README, Session 2</a>.</p>
+    <div class="grid2">
+      <div>
+        <div class="panel" id="scenario-panel-pd"></div>
+        <div class="panel">
+          <h3>Controls</h3>
+          <div class="slider-row">
+            <label>k_p <span class="val" id="pd-kp-val"></span></label>
+            <input type="range" id="pd-kp" min="0" max="0.6" step="0.005">
+          </div>
+          <div class="slider-row">
+            <label>k_d <span class="val" id="pd-kd-val"></span></label>
+            <input type="range" id="pd-kd" min="0" max="20" step="0.25">
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Result</h3>
+          <div class="readout-grid" id="pd-readout"></div>
+        </div>
+        <div class="panel">
+          <h3>Run on real robot</h3>
+          <p class="shared-note" style="margin-top:0">Runs on whatever track you actually built —
+            not the simulated turn radius R above. Compare the character of the response
+            (oscillation, blindness), not point-for-point.</p>
+          <div class="hw-status" id="pd-hw-status"></div>
+          <div class="field">
+            <label>duration (s)</label>
+            <input type="number" id="pd-hw-duration" value="8" min="2" max="30" step="1">
+            <button class="btn" id="pd-hw-run">▶ Run on robot</button>
+          </div>
+          <div class="readout-grid" id="pd-hw-readout"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="plotwrap">
+          <canvas id="pd-plot-e" data-aspect="0.42"></canvas>
+          <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
+            ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== TAB: LQR ============================== -->
+  <section class="tab" id="tab-lqr">
+    <p class="lede">Same scenario, but the gains come from a cost function instead
+      of a guess: pick Q_e, Q_θ, R and the Riccati equation hands back k_e, k_θ.
+      Widen the turn radius until the verdict flips to BLIND — that's the
+      steady-state offset e_ss = −κv/k_e breaking the sensor window. Full
+      writeup: <a href="01-lqr.md">docs/01-lqr.md</a>, and
+      <a href="02-mpc.md#where-lqr-runs-out">docs/02-mpc.md, "Where LQR runs out."</a></p>
+    <div class="grid2">
+      <div>
+        <div class="panel" id="scenario-panel-lqr"></div>
+        <div class="panel">
+          <h3>Cost weights</h3>
+          <div class="slider-row">
+            <label>Q_e (cost per mm²) <span class="val" id="lqr-qe-val"></span></label>
+            <input type="range" id="lqr-qe" min="0.1" max="20" step="0.1">
+          </div>
+          <div class="slider-row">
+            <label>Q_θ (cost per rad²) <span class="val" id="lqr-qth-val"></span></label>
+            <input type="range" id="lqr-qth" min="0" max="30" step="0.5">
+          </div>
+          <div class="slider-row">
+            <label>R (cost per (rad/s)²) <span class="val" id="lqr-r-val"></span></label>
+            <input type="range" id="lqr-r" min="1" max="200" step="1">
+          </div>
+          <div class="shared-note">Q_e, Q_θ, R here also drive the MPC tab's steering
+            law and tracking cost, exactly like sim.py's shared module constants.</div>
+        </div>
+        <div class="panel">
+          <h3>Gains (Riccati solution)</h3>
+          <div class="readout-grid" id="lqr-gains-readout"></div>
+        </div>
+        <div class="panel">
+          <h3>Result</h3>
+          <div class="readout-grid" id="lqr-readout"></div>
+        </div>
+        <div class="panel">
+          <h3>Run on real robot</h3>
+          <p class="shared-note" style="margin-top:0">Runs on whatever track you actually built —
+            not the simulated turn radius R above. Compare the character of the response
+            (oscillation, blindness), not point-for-point.</p>
+          <div class="hw-status" id="lqr-hw-status"></div>
+          <div class="field">
+            <label>duration (s)</label>
+            <input type="number" id="lqr-hw-duration" value="8" min="2" max="30" step="1">
+            <button class="btn" id="lqr-hw-run">▶ Run on robot</button>
+          </div>
+          <div class="readout-grid" id="lqr-hw-readout"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="plotwrap">
+          <canvas id="lqr-plot-e" data-aspect="0.42"></canvas>
+          <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
+            ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== TAB: MPC ============================== -->
+  <section class="tab" id="tab-mpc">
+    <p class="lede">Same steering law as LQR (using the gains from the LQR tab),
+      but forward speed is re-decided every control period from a short preview
+      of the track. Watch v(t) drop before the corner, and e(t) stay inside the
+      window where fixed-speed LQR went blind. Full writeup:
+      <a href="02-mpc.md">docs/02-mpc.md</a> and
+      <a href="03-lqr-vs-mpc.md">docs/03-lqr-vs-mpc.md</a>.</p>
+    <div class="grid2">
+      <div>
+        <div class="panel" id="scenario-panel-mpc"></div>
+        <div class="panel">
+          <h3>MPC controls</h3>
+          <div class="slider-row">
+            <label>horizon N (steps) <span class="val" id="mpc-n-val"></span></label>
+            <input type="range" id="mpc-n" min="1" max="40" step="1">
+          </div>
+          <div class="slider-row">
+            <label>q_v (cost per (mm/s)² speed deviation) <span class="val" id="mpc-qv-val"></span></label>
+            <input type="range" id="mpc-qv" min="-3" max="0" step="0.05">
+          </div>
+          <div class="shared-note" id="mpc-shared-gains"></div>
+        </div>
+        <div class="panel">
+          <h3>LQR vs MPC, this run</h3>
+          <div class="readout-grid" id="mpc-readout"></div>
+        </div>
+        <div class="panel">
+          <h3>Convergence: MPC → LQR as N grows</h3>
+          <div class="readout-grid" id="conv-readout"></div>
+          <div class="caption" style="margin-top:6px">Test state e=4mm, θ=0.1rad — the
+            first move of an N-step finite-horizon solve approaches the infinite-horizon
+            LQR gain as N grows (see docs/03-lqr-vs-mpc.md).</div>
+        </div>
+        <div class="panel">
+          <h3>Run on real robot</h3>
+          <p class="shared-note" style="margin-top:0">Runs on whatever track you actually built, using
+            the reactive curvature estimate from run_mpc.py (no true track map) — not the simulated
+            track above. See docs/02-mpc.md, "Where does the preview come from?"</p>
+          <div class="hw-status" id="mpc-hw-status"></div>
+          <div class="field">
+            <label>duration (s)</label>
+            <input type="number" id="mpc-hw-duration" value="8" min="2" max="30" step="1">
+            <button class="btn" id="mpc-hw-run">▶ Run on robot</button>
+          </div>
+          <div class="readout-grid" id="mpc-hw-readout"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="plotwrap">
+          <canvas id="mpc-plot-e" data-aspect="0.34"></canvas>
+          <div class="caption">e(t) — solid red = simulated MPC, dashed blue = simulated fixed-speed
+            LQR, solid green = your real robot's last MPC run, if any.</div>
+        </div>
+        <div class="plotwrap">
+          <canvas id="mpc-plot-v" data-aspect="0.34"></canvas>
+          <div class="caption">v(t) — MPC's speed schedule vs LQR's constant v_ref; green = real robot</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>Reads <code>code/calibration.json</code> when served over HTTP from the repo root, e.g.
+  <code>python3 -m http.server</code> then open <code>/docs/interactive.html</code>.</footer>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Physics + controller math -- a direct JS port of code/sim.py.
+   Kept dependency-free and framework-free on purpose.
+   ============================================================ */
+
+function step(e, theta, v, omega, kappa, dt) {
+  const eNext = e + dt * v * Math.sin(theta);
+  const thNext = theta + dt * (omega - kappa * v);
+  return [eNext, thNext];
+}
+
+function measure(e, eMax) {
+  return Math.max(-eMax, Math.min(eMax, e));
+}
+
+function lqrGainsAnalytic(v, qe, qth, r) {
+  const ke = Math.sqrt(qe / r);
+  const kth = Math.sqrt(Math.max(0, qth / r + 2 * v * ke));
+  return [ke, kth];
+}
+
+function discreteModel(v, dt) {
+  const A = [[1, v * dt], [0, 1]];
+  const B = [v * dt * dt / 2, dt];
+  return [A, B];
+}
+
+// -- tiny fixed-size (2x2 / 2x1) linear algebra, mirroring sim.py's dlqr() --
+function mulMV(A, x) {
+  return [A[0][0] * x[0] + A[0][1] * x[1], A[1][0] * x[0] + A[1][1] * x[1]];
+}
+function mulMM(A, B) {
+  return [
+    [A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]],
+    [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]],
+  ];
+}
+function transpose(A) { return [[A[0][0], A[1][0]], [A[0][1], A[1][1]]]; }
+function addMM(A, B) { return [[A[0][0]+B[0][0], A[0][1]+B[0][1]], [A[1][0]+B[1][0], A[1][1]+B[1][1]]]; }
+function subMM(A, B) { return [[A[0][0]-B[0][0], A[0][1]-B[0][1]], [A[1][0]-B[1][0], A[1][1]-B[1][1]]]; }
+function outer(u, v) { return [[u[0]*v[0], u[0]*v[1]], [u[1]*v[0], u[1]*v[1]]]; }
+
+/** Discrete-time infinite-horizon LQR by Riccati iteration. Q is 2x2, r is a scalar (already *dt). */
+function dlqr(A, B, Q, r, iters = 2000, tol = 1e-12) {
+  let P = [[Q[0][0], Q[0][1]], [Q[1][0], Q[1][1]]];
+  let K = [0, 0];
+  for (let i = 0; i < iters; i++) {
+    const PB = mulMV(P, B);
+    const S = r + B[0] * PB[0] + B[1] * PB[1];
+    const BtP = [B[0]*P[0][0] + B[1]*P[1][0], B[0]*P[0][1] + B[1]*P[1][1]];
+    const BtPA = [BtP[0]*A[0][0] + BtP[1]*A[1][0], BtP[0]*A[0][1] + BtP[1]*A[1][1]];
+    K = [BtPA[0] / S, BtPA[1] / S];
+    const BK = outer(B, K);
+    const Pnext = addMM(mulMM(transpose(A), mulMM(P, subMM(A, BK))), Q);
+    let diff = 0;
+    for (let r2 = 0; r2 < 2; r2++) for (let c2 = 0; c2 < 2; c2++)
+      diff = Math.max(diff, Math.abs(Pnext[r2][c2] - P[r2][c2]));
+    P = Pnext;
+    if (diff < tol) break;
+  }
+  return { K, P };
+}
+
+function lqrGainsDiscrete(v, dt, qe, qth, r) {
+  const [A, B] = discreteModel(v, dt);
+  const Q = [[qe * dt, 0], [0, qth * dt]];
+  const { K } = dlqr(A, B, Q, r * dt);
+  return K; // [k_e, k_theta]
+}
+
+/** N-step finite-horizon Riccati recursion, first move at a test state (docs/03). */
+function finiteHorizonFirstMove(A, B, Q, r, x, N) {
+  let P = [[Q[0][0], Q[0][1]], [Q[1][0], Q[1][1]]];
+  for (let i = 0; i < N - 1; i++) {
+    const PB = mulMV(P, B);
+    const S = r + B[0]*PB[0] + B[1]*PB[1];
+    const BtP = [B[0]*P[0][0] + B[1]*P[1][0], B[0]*P[0][1] + B[1]*P[1][1]];
+    const BtPA = [BtP[0]*A[0][0] + BtP[1]*A[1][0], BtP[0]*A[0][1] + BtP[1]*A[1][1]];
+    const K = [BtPA[0]/S, BtPA[1]/S];
+    const BK = outer(B, K);
+    P = addMM(mulMM(transpose(A), mulMM(P, subMM(A, BK))), Q);
+  }
+  const PB = mulMV(P, B);
+  const S = r + B[0]*PB[0] + B[1]*PB[1];
+  const BtP = [B[0]*P[0][0] + B[1]*P[1][0], B[0]*P[0][1] + B[1]*P[1][1]];
+  const BtPA = [BtP[0]*A[0][0] + BtP[1]*A[1][0], BtP[0]*A[0][1] + BtP[1]*A[1][1]];
+  const K = [BtPA[0]/S, BtPA[1]/S];
+  return -(K[0]*x[0] + K[1]*x[1]);
+}
+
+// -- track: straight, then a constant-radius turn, then straight (mirrors sim.py's Track/DEMO_TRACK) --
+function makeTurnTrack(radius, leadIn = 400, straightOut = 400) {
+  const arc = radius * Math.PI / 2; // 90 degree turn
+  const segments = [[leadIn, null], [arc, radius], [straightOut, null]];
+  const length = leadIn + arc + straightOut;
+  function kappa(s) {
+    if (s < 0) return 0;
+    let acc = 0;
+    for (const [L, rad] of segments) {
+      if (s < acc + L) return rad === null ? 0 : 1 / rad;
+      acc += L;
+    }
+    return 0;
+  }
+  return { segments, length, kappa, leadIn, arc, straightOut };
+}
+
+function runFixedSpeed(track, v, ke, kth, dt, eMax, tMax = 14) {
+  let s = 0, e = 0, theta = 0;
+  const log = [];
+  const n = Math.floor(tMax / dt);
+  let blind = 0, peak = 0;
+  for (let i = 0; i < n; i++) {
+    if (s > track.length) break;
+    const em = measure(e, eMax);
+    const saturated = Math.abs(e) >= eMax * 0.999;
+    const omega = -ke * em - kth * theta;
+    log.push({ t: i * dt, e, theta, v, omega });
+    blind += saturated ? 1 : 0;
+    peak = Math.max(peak, Math.abs(e));
+    const kappa = track.kappa(s);
+    [e, theta] = step(e, theta, v, omega, kappa, dt);
+    s += v * dt;
+  }
+  return { log, blind, peak, lap: log.length * dt, meanV: v };
+}
+
+function mpcChooseSpeed(e, theta, s, track, candidates, horizon, dt, eMax, vRef, qe, qth, r, qv, pen = 1e4) {
+  let bestCost = Infinity, bestV = candidates[0];
+  const table = [];
+  for (const v of candidates) {
+    const [ke, kth] = lqrGainsDiscrete(v, dt, qe, qth, r);
+    let ep = e, thp = theta, sp = s, cost = 0, peak = Math.abs(ep);
+    for (let k = 0; k < horizon; k++) {
+      const em = measure(ep, eMax);
+      const omega = -ke * em - kth * thp;
+      cost += (qe * ep * ep + qth * thp * thp) * dt;
+      cost += pen * Math.pow(Math.max(0, Math.abs(ep) - eMax), 2) * dt;
+      const kappa = track.kappa(sp);
+      [ep, thp] = step(ep, thp, v, omega, kappa, dt);
+      sp += v * dt;
+      peak = Math.max(peak, Math.abs(ep));
+    }
+    cost += qv * Math.pow(v - vRef, 2) * horizon * dt;
+    table.push({ v, peak, cost });
+    if (cost < bestCost) { bestCost = cost; bestV = v; }
+  }
+  return { v: bestV, table };
+}
+
+function runMPC(track, dt, eMax, candidates, horizon, vRef, qe, qth, r, qv, tMax = 14) {
+  let s = 0, e = 0, theta = 0;
+  const log = [];
+  const n = Math.floor(tMax / dt);
+  let blind = 0, peak = 0, vsum = 0;
+  for (let i = 0; i < n; i++) {
+    if (s > track.length) break;
+    const { v } = mpcChooseSpeed(e, theta, s, track, candidates, horizon, dt, eMax, vRef, qe, qth, r, qv);
+    const [ke, kth] = lqrGainsDiscrete(v, dt, qe, qth, r);
+    const em = measure(e, eMax);
+    const saturated = Math.abs(e) >= eMax * 0.999;
+    const omega = -ke * em - kth * theta;
+    log.push({ t: i * dt, e, theta, v, omega });
+    blind += saturated ? 1 : 0;
+    peak = Math.max(peak, Math.abs(e));
+    vsum += v;
+    const kappa = track.kappa(s);
+    [e, theta] = step(e, theta, v, omega, kappa, dt);
+    s += v * dt;
+  }
+  return { log, blind, peak, lap: log.length * dt, meanV: log.length ? vsum / log.length : 0 };
+}
+
+function countCrossings(log) {
+  let crossings = 0, prevSign = null;
+  for (const row of log) {
+    const sign = row.e > 0 ? 1 : -1;
+    if (prevSign !== null && sign !== prevSign) crossings++;
+    prevSign = sign;
+  }
+  return crossings;
+}
+
+/** peak |e|, % of samples saturated, and mean v for a real-hardware log. */
+function summarizeRealLog(log, eMax) {
+  if (!log.length) return { peak: 0, blindPct: 0, meanV: 0 };
+  const peak = Math.max(...log.map(r => Math.abs(r.e)));
+  const blind = log.filter(r => r.saturated).length;
+  const meanV = log.reduce((s, r) => s + r.v, 0) / log.length;
+  return { peak, blindPct: 100 * blind / log.length, meanV };
+}
+
+/* ============================================================
+   Calibration loading
+   ============================================================ */
+const CAL_DEFAULTS = {
+  reflect_black: 12.0, reflect_white: 85.0, e_max_mm: 6.0,
+  track_width_mm: 96.0, wheel_max_mms: 400.0, dt: 0.05, follow_left_edge: true,
+};
+let CAL = { ...CAL_DEFAULTS };
+let CAL_SOURCE = "reference build (no calibration.json found)";
+
+async function loadCalibration() {
+  try {
+    const res = await fetch("../code/calibration.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("not found");
+    const data = await res.json();
+    CAL = { ...CAL_DEFAULTS, ...data };
+    CAL_SOURCE = "code/calibration.json";
+  } catch (err) {
+    document.getElementById("cal-banner").innerHTML =
+      `<div class="banner">Could not load <code>code/calibration.json</code> ` +
+      `(${err.message}). Showing generic reference-build numbers instead. ` +
+      `Run <code>code/calibrate.py</code>, then serve this page over HTTP from ` +
+      `the repo root (e.g. <code>python3 -m http.server</code>) so the fetch works.</div>`;
+  }
+  renderCalibration();
+}
+
+function renderCalibration() {
+  document.getElementById("cal-subtitle").textContent =
+    `Using ${CAL_SOURCE} — e_max=${CAL.e_max_mm}mm, track width=${CAL.track_width_mm}mm, ` +
+    `wheel max=${CAL.wheel_max_mms}mm/s, dt=${(CAL.dt*1000).toFixed(0)}ms`;
+  const rows = [
+    ["reflect_black", CAL.reflect_black, ""],
+    ["reflect_white", CAL.reflect_white, ""],
+    ["contrast (white − black)", (CAL.reflect_white - CAL.reflect_black).toFixed(1), ""],
+    ["e_max_mm (sensor window, half-width)", CAL.e_max_mm.toFixed(1), "mm"],
+    ["track_width_mm", CAL.track_width_mm.toFixed(1), "mm"],
+    ["wheel_max_mms (speed at 100%)", CAL.wheel_max_mms.toFixed(0), "mm/s"],
+    ["dt (control period)", (CAL.dt * 1000).toFixed(0), "ms"],
+  ];
+  document.getElementById("cal-table").innerHTML = rows.map(([k, v, u]) =>
+    `<tr><td>${k}</td><td>${v}${u}</td></tr>`).join("");
+}
+
+/* ============================================================
+   Canvas line-chart, no external dependencies
+   ============================================================ */
+class Chart {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.series = [];
+    this.hlines = [];
+    this.vspan = null;
+    this.xlabel = ""; this.ylabel = ""; this.title = "";
+    new ResizeObserver(() => this.draw()).observe(canvas.parentElement);
+  }
+  setData({ series = [], hlines = [], vspan = null, xlabel, ylabel, title }) {
+    this.series = series; this.hlines = hlines; this.vspan = vspan;
+    if (xlabel !== undefined) this.xlabel = xlabel;
+    if (ylabel !== undefined) this.ylabel = ylabel;
+    if (title !== undefined) this.title = title;
+    this.draw();
+  }
+  draw() {
+    const canvas = this.canvas, ctx = this.ctx;
+    const parent = canvas.parentElement;
+    const cssW = Math.max(parent.clientWidth, 240);
+    const aspect = parseFloat(canvas.dataset.aspect || "0.42");
+    const cssH = Math.max(160, cssW * aspect);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+    canvas.style.width = cssW + "px"; canvas.style.height = cssH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const style = getComputedStyle(document.documentElement);
+    const fg = style.getPropertyValue("--fg").trim() || "#222";
+    const grid = style.getPropertyValue("--grid").trim() || "#ddd";
+    const bg = style.getPropertyValue("--panel-bg").trim() || "#fff";
+
+    const padL = 70, padR = 12, padT = this.title ? 22 : 8, padB = 30;
+    const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+
+    let xs = [], ys = [];
+    for (const s of this.series) for (const [x, y] of s.points) { xs.push(x); ys.push(y); }
+    for (const h of this.hlines) ys.push(h.y);
+    if (this.vspan) { xs.push(this.vspan.x0, this.vspan.x1); }
+    if (!xs.length) xs = [0, 1];
+    if (!ys.length) ys = [-1, 1];
+    let xmin = Math.min(...xs), xmax = Math.max(...xs);
+    let ymin = Math.min(...ys), ymax = Math.max(...ys);
+    if (xmax - xmin < 1e-6) xmax = xmin + 1;
+    const ypad = (ymax - ymin) * 0.15 || 1;
+    ymin -= ypad; ymax += ypad;
+
+    const xToPx = x => padL + (x - xmin) / (xmax - xmin) * plotW;
+    const yToPx = y => padT + (1 - (y - ymin) / (ymax - ymin)) * plotH;
+
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, cssW, cssH);
+
+    if (this.vspan) {
+      ctx.fillStyle = this.vspan.color || "rgba(128,128,128,0.18)";
+      const x0 = xToPx(Math.max(this.vspan.x0, xmin)), x1 = xToPx(Math.min(this.vspan.x1, xmax));
+      ctx.fillRect(x0, padT, Math.max(0, x1 - x0), plotH);
+    }
+
+    ctx.strokeStyle = grid; ctx.fillStyle = fg; ctx.font = "11px system-ui, sans-serif";
+    ctx.lineWidth = 1;
+    const NT = 5;
+    for (let i = 0; i <= NT; i++) {
+      const x = xmin + (xmax - xmin) * i / NT, px = xToPx(x);
+      ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.stroke();
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText(x.toFixed(Math.abs(x) < 10 ? 2 : 1), px, padT + plotH + 4);
+    }
+    for (let i = 0; i <= NT; i++) {
+      const y = ymin + (ymax - ymin) * i / NT, py = yToPx(y);
+      ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(padL + plotW, py); ctx.stroke();
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText(y.toFixed(1), padL - 16, py);
+    }
+    ctx.strokeStyle = fg; ctx.strokeRect(padL, padT, plotW, plotH);
+
+    for (const h of this.hlines) {
+      const py = yToPx(h.y);
+      ctx.save();
+      ctx.strokeStyle = h.color || "#e33";
+      ctx.setLineDash(h.dash === false ? [] : [5, 4]);
+      ctx.lineWidth = 1.25;
+      ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(padL + plotW, py); ctx.stroke();
+      ctx.restore();
+    }
+
+    for (const s of this.series) {
+      if (!s.points.length) continue;
+      ctx.save();
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2;
+      ctx.globalAlpha = s.alpha !== undefined ? s.alpha : 1;
+      ctx.setLineDash(s.dash ? [6, 4] : []);
+      ctx.beginPath();
+      s.points.forEach(([x, y], i) => {
+        const px = xToPx(x), py = yToPx(Math.max(ymin, Math.min(ymax, y)));
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = fg; ctx.font = "12px system-ui, sans-serif";
+    if (this.title) { ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(this.title, padL, 2); }
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(this.xlabel, padL + plotW / 2, cssH - 2);
+    ctx.save();
+    ctx.translate(8, padT + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(this.ylabel, 0, 0);
+    ctx.restore();
+
+    const legendItems = this.series.filter(s => s.label);
+    if (legendItems.length) {
+      ctx.font = "11px system-ui, sans-serif";
+      let maxW = 0;
+      legendItems.forEach(it => { maxW = Math.max(maxW, ctx.measureText(it.label).width + 24); });
+      const boxW = maxW + 6, boxH = legendItems.length * 15 + 8;
+      ctx.fillStyle = "rgba(128,128,128,0.15)";
+      ctx.fillRect(padL + plotW - boxW - 4, padT + 4, boxW, boxH);
+      legendItems.forEach((it, i) => {
+        const iy = padT + 4 + 8 + i * 15;
+        ctx.strokeStyle = it.color; ctx.lineWidth = 2;
+        ctx.setLineDash(it.dash ? [4, 3] : []);
+        ctx.beginPath(); ctx.moveTo(padL + plotW - boxW + 2, iy); ctx.lineTo(padL + plotW - boxW + 16, iy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = fg; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(it.label, padL + plotW - boxW + 20, iy);
+      });
+    }
+  }
+}
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+function bindSlider(id, onChange) {
+  const input = document.getElementById(id);
+  const out = document.getElementById(id + "-val");
+  input.addEventListener("input", () => onChange(parseFloat(input.value), out, input));
+  return { input, out };
+}
+function fmt(x, d = 2) { return Number(x).toFixed(d); }
+
+function scenarioPanelHTML(prefix) {
+  return `<h3>Scenario (shared)</h3>
+    <div class="slider-row">
+      <label>forward speed v <span class="val" id="${prefix}-v-val"></span></label>
+      <input type="range" id="${prefix}-v" min="50" max="300" step="5">
+    </div>
+    <div class="slider-row">
+      <label>turn radius R <span class="val" id="${prefix}-R-val"></span></label>
+      <input type="range" id="${prefix}-R" min="20" max="400" step="5">
+    </div>
+    <div class="shared-note" id="${prefix}-vmax-note"></div>`;
+}
+
+const scenario = { v: 150, R: 80 };
+
+function wireScenario(prefix, onChange) {
+  const vSlider = document.getElementById(prefix + "-v");
+  const rSlider = document.getElementById(prefix + "-R");
+  vSlider.value = scenario.v; rSlider.value = scenario.R;
+  document.getElementById(prefix + "-v-val").textContent = fmt(scenario.v, 0) + " mm/s";
+  document.getElementById(prefix + "-R-val").textContent = fmt(scenario.R, 0) + " mm";
+  vSlider.addEventListener("input", () => {
+    scenario.v = parseFloat(vSlider.value);
+    document.getElementById(prefix + "-v-val").textContent = fmt(scenario.v, 0) + " mm/s";
+    syncScenarioUI(prefix);
+    onChange();
+  });
+  rSlider.addEventListener("input", () => {
+    scenario.R = parseFloat(rSlider.value);
+    document.getElementById(prefix + "-R-val").textContent = fmt(scenario.R, 0) + " mm";
+    syncScenarioUI(prefix);
+    onChange();
+  });
+}
+function syncScenarioUI(exceptPrefix) {
+  for (const p of ["pd", "lqr", "mpc"]) {
+    if (p === exceptPrefix) continue;
+    const vs = document.getElementById(p + "-v"), rs = document.getElementById(p + "-R");
+    if (!vs) continue;
+    vs.value = scenario.v; rs.value = scenario.R;
+    document.getElementById(p + "-v-val").textContent = fmt(scenario.v, 0) + " mm/s";
+    document.getElementById(p + "-R-val").textContent = fmt(scenario.R, 0) + " mm";
+  }
+}
+
+// -- shared LQR cost weights (drive both the LQR tab and MPC's steering/cost) --
+const gains = { qe: 1.0, qth: 0.0, r: 25.0 };
+
+/* ---------------- Bang-bang tab ---------------- */
+function initBangBang() {
+  const state = { v: 100, w: 2.0 };
+  const chart = new Chart(document.getElementById("bb-plot-e"));
+  let lastReal = null;
+
+  function recompute() {
+    const dt = CAL.dt, eMax = CAL.e_max_mm;
+    let e = eMax * 0.7, theta = 0, prevSign = null, crossings = 0;
+    const log = [];
+    const tMax = 6, n = Math.floor(tMax / dt);
+    for (let i = 0; i < n; i++) {
+      const sign = e > 0 ? 1 : -1;
+      if (prevSign !== null && sign !== prevSign) crossings++;
+      prevSign = sign;
+      const omega = -state.w * sign;
+      log.push({ t: i * dt, e });
+      [e, theta] = step(e, theta, state.v, omega, 0, dt);
+    }
+    const wobbleHz = crossings / (2 * tMax);
+    const series = [{ points: log.map(r => [r.t, r.e]), color: "#111", width: 2, label: "simulated" }];
+    if (lastReal) series.push({ points: lastReal.map(r => [r.t, r.e]), color: "#157a3d", width: 2, label: "real robot" });
+    chart.setData({
+      series,
+      hlines: [{ y: eMax, color: "#e33" }, { y: -eMax, color: "#e33" }],
+      xlabel: "t [s]", ylabel: "e [mm]",
+    });
+    document.getElementById("bb-readout").innerHTML = `
+      <div class="k">wobble frequency</div><div class="v">${fmt(wobbleHz, 2)} Hz</div>
+      <div class="k">sign changes (6 s)</div><div class="v">${crossings}</div>`;
+    if (lastReal) {
+      const realCrossings = countCrossings(lastReal);
+      const realDuration = lastReal.length ? lastReal[lastReal.length - 1].t : 0;
+      const realPeak = Math.max(...lastReal.map(r => Math.abs(r.e)), 0);
+      document.getElementById("bb-hw-readout").innerHTML = `
+        <div class="k">real wobble frequency</div><div class="v">${fmt(realCrossings / (2 * Math.max(realDuration, 1e-6)), 2)} Hz</div>
+        <div class="k">real peak |e|</div><div class="v ${realPeak > eMax ? "bad" : "ok"}">${fmt(realPeak, 2)} mm</div>`;
+    }
+  }
+  bindSlider("bb-v", (val, out) => { state.v = val; out.textContent = fmt(val, 0) + " mm/s"; recompute(); });
+  bindSlider("bb-w", (val, out) => { state.w = val; out.textContent = fmt(val, 2) + " rad/s"; recompute(); });
+  document.getElementById("bb-v").value = state.v;
+  document.getElementById("bb-w").value = state.w;
+  document.getElementById("bb-v-val").textContent = fmt(state.v, 0) + " mm/s";
+  document.getElementById("bb-w-val").textContent = fmt(state.w, 2) + " rad/s";
+  wireHardwareRun("bb", "bangbang", () => ({ v: state.v, omega_mag: state.w }), log => { lastReal = log; recompute(); });
+  window.__recomputeBangBang = recompute;
+  recompute();
+}
+
+/* ---------------- PD tab ---------------- */
+function initPD() {
+  document.getElementById("scenario-panel-pd").innerHTML = scenarioPanelHTML("pd");
+  const state = { kp: 0.15, kd: 0.0 };
+  const chart = new Chart(document.getElementById("pd-plot-e"));
+  let lastReal = null;
+
+  function recompute() {
+    const dt = CAL.dt, eMax = CAL.e_max_mm;
+    const track = makeTurnTrack(scenario.R);
+    const { log, blind, peak } = runFixedSpeed(track, scenario.v, state.kp, state.kd, dt, eMax);
+    const turnStartT = track.leadIn / scenario.v, turnEndT = (track.leadIn + track.arc) / scenario.v;
+    const series = [{ points: log.map(r => [r.t, r.e]), color: "#111", width: 2, label: "simulated" }];
+    if (lastReal) series.push({ points: lastReal.map(r => [r.t, r.e]), color: "#157a3d", width: 2, label: "real robot" });
+    chart.setData({
+      series,
+      hlines: [{ y: eMax, color: "#e33" }, { y: -eMax, color: "#e33" }],
+      vspan: { x0: turnStartT, x1: turnEndT },
+      xlabel: "t [s]", ylabel: "e [mm]",
+    });
+    const eSs = -(1 / scenario.R) * scenario.v / Math.max(state.kp, 1e-6);
+    const blindPct = 100 * blind / Math.max(log.length, 1);
+    document.getElementById("pd-readout").innerHTML = `
+      <div class="k">peak |e|</div><div class="v ${Math.abs(peak) > eMax ? "bad" : "ok"}">${fmt(peak, 2)} mm</div>
+      <div class="k">predicted e_ss in turn</div><div class="v">${fmt(eSs, 2)} mm</div>
+      <div class="k">blind (sensor clipped)</div><div class="v ${blindPct > 0 ? "bad" : "ok"}">${fmt(blindPct, 1)}%</div>`;
+    if (lastReal) {
+      const r = summarizeRealLog(lastReal, eMax);
+      document.getElementById("pd-hw-readout").innerHTML = `
+        <div class="k">real peak |e|</div><div class="v ${r.peak > eMax ? "bad" : "ok"}">${fmt(r.peak, 2)} mm</div>
+        <div class="k">real blind</div><div class="v ${r.blindPct > 0 ? "bad" : "ok"}">${fmt(r.blindPct, 1)}%</div>`;
+    }
+  }
+  bindSlider("pd-kp", (val, out) => { state.kp = val; out.textContent = fmt(val, 3); recompute(); });
+  bindSlider("pd-kd", (val, out) => { state.kd = val; out.textContent = fmt(val, 2); recompute(); });
+  document.getElementById("pd-kp").value = state.kp;
+  document.getElementById("pd-kd").value = state.kd;
+  document.getElementById("pd-kp-val").textContent = fmt(state.kp, 3);
+  document.getElementById("pd-kd-val").textContent = fmt(state.kd, 2);
+  wireScenario("pd", recompute);
+  wireHardwareRun("pd", "pd", () => ({ v: scenario.v, kp: state.kp, kd: state.kd }), log => { lastReal = log; recompute(); });
+  window.__recomputePD = recompute;
+  recompute();
+}
+
+/* ---------------- LQR tab ---------------- */
+function initLQR() {
+  document.getElementById("scenario-panel-lqr").innerHTML = scenarioPanelHTML("lqr");
+  const chart = new Chart(document.getElementById("lqr-plot-e"));
+  let lastReal = null;
+
+  function recompute() {
+    const dt = CAL.dt, eMax = CAL.e_max_mm;
+    const [keA, kthA] = lqrGainsAnalytic(scenario.v, gains.qe, gains.qth, gains.r);
+    const [keD, kthD] = lqrGainsDiscrete(scenario.v, dt, gains.qe, gains.qth, gains.r);
+    const wn = Math.sqrt(scenario.v * keA);
+    const zeta = kthA / (2 * wn);
+
+    const track = makeTurnTrack(scenario.R);
+    const { log, blind, peak } = runFixedSpeed(track, scenario.v, keD, kthD, dt, eMax);
+    const turnStartT = track.leadIn / scenario.v, turnEndT = (track.leadIn + track.arc) / scenario.v;
+    const series = [{ points: log.map(r => [r.t, r.e]), color: "#111", width: 2, label: "simulated" }];
+    if (lastReal) series.push({ points: lastReal.map(r => [r.t, r.e]), color: "#157a3d", width: 2, label: "real robot" });
+    chart.setData({
+      series,
+      hlines: [{ y: eMax, color: "#e33" }, { y: -eMax, color: "#e33" }],
+      vspan: { x0: turnStartT, x1: turnEndT },
+      xlabel: "t [s]", ylabel: "e [mm]",
+    });
+
+    document.getElementById("lqr-gains-readout").innerHTML = `
+      <div class="k">k_e (discrete, used)</div><div class="v">${fmt(keD, 4)}</div>
+      <div class="k">k_θ (discrete, used)</div><div class="v">${fmt(kthD, 4)}</div>
+      <div class="k">damping ratio ζ (continuous)</div><div class="v">${fmt(zeta, 3)}</div>
+      <div class="k">natural freq ω_n</div><div class="v">${fmt(wn, 2)} rad/s</div>`;
+
+    const eSs = -(1 / scenario.R) * scenario.v / keD;
+    const vMax = keD * eMax * scenario.R;
+    const blindPct = 100 * blind / Math.max(log.length, 1);
+    document.getElementById("lqr-readout").innerHTML = `
+      <div class="k">peak |e|</div><div class="v ${Math.abs(peak) > eMax ? "bad" : "ok"}">${fmt(peak, 2)} mm</div>
+      <div class="k">predicted e_ss = −κv/k_e</div><div class="v">${fmt(eSs, 2)} mm</div>
+      <div class="k">verdict</div><div class="v ${Math.abs(eSs) <= eMax ? "ok" : "bad"}">${Math.abs(eSs) <= eMax ? "ok" : "BLIND"}</div>
+      <div class="k">v_max = k_e·e_max·R at this R</div><div class="v">${fmt(vMax, 0)} mm/s</div>
+      <div class="k">blind (sensor clipped)</div><div class="v ${blindPct > 0 ? "bad" : "ok"}">${fmt(blindPct, 1)}%</div>`;
+    if (lastReal) {
+      const r = summarizeRealLog(lastReal, eMax);
+      document.getElementById("lqr-hw-readout").innerHTML = `
+        <div class="k">real peak |e|</div><div class="v ${r.peak > eMax ? "bad" : "ok"}">${fmt(r.peak, 2)} mm</div>
+        <div class="k">real blind</div><div class="v ${r.blindPct > 0 ? "bad" : "ok"}">${fmt(r.blindPct, 1)}%</div>`;
+    }
+  }
+
+  bindSlider("lqr-qe", (val, out) => { gains.qe = val; out.textContent = fmt(val, 2); recompute(); refreshMPCSharedNote(); if (window.__recomputeMPC) window.__recomputeMPC(); });
+  bindSlider("lqr-qth", (val, out) => { gains.qth = val; out.textContent = fmt(val, 2); recompute(); refreshMPCSharedNote(); if (window.__recomputeMPC) window.__recomputeMPC(); });
+  bindSlider("lqr-r", (val, out) => { gains.r = val; out.textContent = fmt(val, 1); recompute(); refreshMPCSharedNote(); if (window.__recomputeMPC) window.__recomputeMPC(); });
+  document.getElementById("lqr-qe").value = gains.qe;
+  document.getElementById("lqr-qth").value = gains.qth;
+  document.getElementById("lqr-r").value = gains.r;
+  document.getElementById("lqr-qe-val").textContent = fmt(gains.qe, 2);
+  document.getElementById("lqr-qth-val").textContent = fmt(gains.qth, 2);
+  document.getElementById("lqr-r-val").textContent = fmt(gains.r, 1);
+
+  wireScenario("lqr", recompute);
+  wireHardwareRun("lqr", "lqr", () => ({ v: scenario.v, qe: gains.qe, qth: gains.qth, r: gains.r }),
+    log => { lastReal = log; recompute(); });
+  window.__recomputeLQR = recompute;
+  recompute();
+}
+
+function refreshMPCSharedNote() {
+  const el = document.getElementById("mpc-shared-gains");
+  if (el) el.textContent = `Using Q_e=${fmt(gains.qe,2)}, Q_θ=${fmt(gains.qth,2)}, R=${fmt(gains.r,1)} from the LQR tab.`;
+}
+
+/* ============================================================
+   Hardware API -- talks to code/calibrate_server.py, if running.
+   Every call fails softly: if the server (or the robot) isn't there,
+   callers get a rejected promise with a readable .message.
+   ============================================================ */
+async function hwApi(path, body) {
+  const opts = body === undefined ? {} :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch (err) {
+    throw new Error("no response from the server (is code/calibrate_server.py running?)");
+  }
+  let data = {};
+  try { data = await res.json(); } catch (err) { /* non-JSON error page */ }
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+let hwServerAvailable = null; // null = unknown, true/false once checked
+
+async function checkHwServer() {
+  try {
+    await hwApi("/api/cal/status");
+    hwServerAvailable = true;
+  } catch (err) {
+    hwServerAvailable = false;
+  }
+  return hwServerAvailable;
+}
+
+/** Wires a tab's "Run on real robot" button. `getParams()` returns the
+ * controller kwargs (gains etc.) at click time; `onLog(log)` receives the
+ * captured real-hardware samples once the run completes. */
+function wireHardwareRun(prefix, controllerName, getParams, onLog) {
+  const btn = document.getElementById(prefix + "-hw-run");
+  const durationEl = document.getElementById(prefix + "-hw-duration");
+  const statusEl = document.getElementById(prefix + "-hw-status");
+  if (!btn) return;
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = "hw-status" + (cls ? " " + cls : "");
+  }
+
+  checkHwServer().then(ok => {
+    if (ok) {
+      setStatus("Ready.", "ok");
+    } else {
+      setStatus("code/calibrate_server.py isn't running -- start it to run this on real hardware.", "err");
+      btn.disabled = true;
+    }
+  });
+
+  btn.addEventListener("click", async () => {
+    const duration = parseFloat(durationEl.value) || 8;
+    if (!confirm(`This drives the real robot for ${duration}s using the ${controllerName} ` +
+                 `controller. Make sure the track is clear. Continue?`)) return;
+    btn.disabled = true;
+    setStatus(`Running ${controllerName} on the robot for ${duration}s (connecting can take a ` +
+              `while if the robot isn't found)...`);
+    try {
+      const params = getParams();
+      params.duration = duration;
+      const d = await hwApi(`/api/run/${controllerName}`, params);
+      setStatus(`Done -- ${d.log.length} samples captured.`, "ok");
+      onLog(d.log);
+    } catch (err) {
+      setStatus("Run failed: " + err.message, "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ---------------- Redo calibration (Your Robot tab) ---------------- */
+function initRecalibration() {
+  let liveTimer = null;
+  const statusEl = document.getElementById("recal-status");
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = "hw-status" + (cls ? " " + cls : "");
+  }
+
+  checkHwServer().then(ok => {
+    if (ok) {
+      setStatus("Connected to code/calibrate_server.py.", "ok");
+    } else {
+      setStatus("code/calibrate_server.py isn't running, so this panel can't reach the robot. " +
+        "Start it with: .venv/bin/python3 code/calibrate_server.py -- see the README.", "err");
+      document.getElementById("recal-connect-sensor").disabled = true;
+    }
+  });
+
+  document.getElementById("recal-connect-sensor").addEventListener("click", async () => {
+    setStatus("Connecting to the Color Sensor over BLE (can take up to ~30s)...");
+    try {
+      await hwApi("/api/cal/connect-sensor", {});
+      setStatus("Sensor connected.", "ok");
+      document.getElementById("recal-step-start").style.display = "none";
+      document.getElementById("recal-step-sensor").style.display = "block";
+      liveTimer = setInterval(async () => {
+        try {
+          const d = await hwApi("/api/cal/live");
+          document.getElementById("recal-live").textContent = d.reflection.toFixed(1);
+        } catch (err) { /* transient poll error, ignore */ }
+      }, 200);
+    } catch (err) {
+      setStatus("Could not connect: " + err.message, "err");
+    }
+  });
+
+  document.getElementById("recal-sample-black").addEventListener("click", async () => {
+    setStatus("Sampling for 3s -- hold the sensor fully over the BLACK tape...");
+    try {
+      const d = await hwApi("/api/cal/sample-black", { seconds: 3.0 });
+      document.getElementById("recal-black-result").textContent =
+        `= ${d.value.toFixed(1)} (spread ${d.lo.toFixed(0)}..${d.hi.toFixed(0)})`;
+      setStatus("Black sampled.", "ok");
+    } catch (err) { setStatus("Sampling failed: " + err.message, "err"); }
+  });
+
+  document.getElementById("recal-sample-white").addEventListener("click", async () => {
+    setStatus("Sampling for 3s -- hold the sensor fully over the WHITE background...");
+    try {
+      const d = await hwApi("/api/cal/sample-white", { seconds: 3.0 });
+      const lowContrast = d.contrast < 20;
+      document.getElementById("recal-white-result").textContent =
+        `= ${d.value.toFixed(1)} (spread ${d.lo.toFixed(0)}..${d.hi.toFixed(0)}, contrast ${d.contrast.toFixed(1)})`;
+      setStatus(lowContrast
+        ? "White sampled. WARNING: contrast < 20 counts -- fix lighting/ride height."
+        : "White sampled.", lowContrast ? "err" : "ok");
+    } catch (err) { setStatus("Sampling failed: " + err.message, "err"); }
+  });
+
+  document.getElementById("recal-set-window").addEventListener("click", async () => {
+    const span = parseFloat(document.getElementById("recal-span").value);
+    try {
+      const d = await hwApi("/api/cal/set-window", { span_mm: span });
+      document.getElementById("recal-window-result").textContent = `e_max = ${d.e_max_mm.toFixed(1)} mm`;
+    } catch (err) { setStatus("Failed: " + err.message, "err"); }
+  });
+
+  document.getElementById("recal-to-motors").addEventListener("click", async () => {
+    clearInterval(liveTimer);
+    setStatus("Disconnecting sensor, connecting to the Double Motor...");
+    try {
+      await hwApi("/api/cal/disconnect-sensor", {});
+      await hwApi("/api/cal/connect-motors", {});
+      setStatus("Motors connected.", "ok");
+      document.getElementById("recal-step-sensor").style.display = "none";
+      document.getElementById("recal-step-motors").style.display = "block";
+      document.getElementById("recal-trackwidth").value = CAL.track_width_mm;
+    } catch (err) { setStatus("Failed: " + err.message, "err"); }
+  });
+
+  document.getElementById("recal-drive-test").addEventListener("click", async () => {
+    if (!confirm("This drives the real robot straight for 2 seconds at full speed. " +
+                 "Make sure it has a clear, straight run of at least 1 m. Continue?")) return;
+    setStatus("Driving...");
+    try {
+      await hwApi("/api/cal/drive-test", { seconds: 2.0, speed: 100 });
+      setStatus("Done -- measure the distance traveled and enter it below.", "ok");
+    } catch (err) { setStatus("Drive failed: " + err.message, "err"); }
+  });
+
+  document.getElementById("recal-save").addEventListener("click", async () => {
+    const distance = parseFloat(document.getElementById("recal-distance").value);
+    const trackWidth = parseFloat(document.getElementById("recal-trackwidth").value);
+    try {
+      if (distance) await hwApi("/api/cal/set-speed", { distance_mm: distance, seconds: 2.0 });
+      if (trackWidth) await hwApi("/api/cal/set-track-width", { width_mm: trackWidth });
+      await hwApi("/api/cal/disconnect-motors", {});
+      const d = await hwApi("/api/cal/save", {});
+      CAL = { ...CAL_DEFAULTS, ...d.cal };
+      CAL_SOURCE = "code/calibration.json (just saved)";
+      renderCalibration();
+      [window.__recomputeBangBang, window.__recomputePD, window.__recomputeLQR, window.__recomputeMPC]
+        .forEach(fn => fn && fn());
+      document.getElementById("recal-step-motors").style.display = "none";
+      document.getElementById("recal-done").style.display = "block";
+      setStatus("Saved.", "ok");
+    } catch (err) { setStatus("Save failed: " + err.message, "err"); }
+  });
+}
+
+/* ---------------- MPC tab ---------------- */
+const MPC_BASE_CANDIDATES = [40, 60, 80, 100, 120, 150, 180, 210, 240, 280];
+
+function initMPC() {
+  document.getElementById("scenario-panel-mpc").innerHTML = scenarioPanelHTML("mpc");
+  refreshMPCSharedNote();
+  const state = { n: 15, logQv: -2 };
+  const chartE = new Chart(document.getElementById("mpc-plot-e"));
+  const chartV = new Chart(document.getElementById("mpc-plot-v"));
+  let lastReal = null;
+
+  function recompute() {
+    const dt = CAL.dt, eMax = CAL.e_max_mm;
+    const candidates = MPC_BASE_CANDIDATES.filter(v => v <= CAL.wheel_max_mms * 0.95);
+    const qv = Math.pow(10, state.logQv);
+    const track = makeTurnTrack(scenario.R);
+
+    const mpc = runMPC(track, dt, eMax, candidates, state.n, scenario.v, gains.qe, gains.qth, gains.r, qv);
+    const [keD, kthD] = lqrGainsDiscrete(scenario.v, dt, gains.qe, gains.qth, gains.r);
+    const lqr = runFixedSpeed(track, scenario.v, keD, kthD, dt, eMax);
+
+    const turnStartT = track.leadIn / scenario.v, turnEndT = (track.leadIn + track.arc) / scenario.v;
+    const eSeries = [
+      { points: mpc.log.map(r => [r.t, r.e]), color: "#b3261e", width: 2, label: "MPC (sim)" },
+      { points: lqr.log.map(r => [r.t, r.e]), color: "#2563eb", width: 1.5, dash: true, label: "LQR (sim)" },
+    ];
+    const vSeries = [
+      { points: mpc.log.map(r => [r.t, r.v]), color: "#b3261e", width: 2, label: "MPC (sim)" },
+      { points: lqr.log.map(r => [r.t, r.v]), color: "#2563eb", width: 1.5, dash: true, label: "LQR (sim)" },
+    ];
+    if (lastReal) {
+      eSeries.push({ points: lastReal.map(r => [r.t, r.e]), color: "#157a3d", width: 2, label: "real robot" });
+      vSeries.push({ points: lastReal.map(r => [r.t, r.v]), color: "#157a3d", width: 2, label: "real robot" });
+    }
+    chartE.setData({
+      series: eSeries,
+      hlines: [{ y: eMax, color: "#e33" }, { y: -eMax, color: "#e33" }],
+      vspan: { x0: turnStartT, x1: turnEndT },
+      xlabel: "t [s]", ylabel: "e [mm]",
+    });
+    chartV.setData({
+      series: vSeries,
+      vspan: { x0: turnStartT, x1: turnEndT },
+      xlabel: "t [s]", ylabel: "v [mm/s]",
+    });
+
+    const blindPctMpc = 100 * mpc.blind / Math.max(mpc.log.length, 1);
+    const blindPctLqr = 100 * lqr.blind / Math.max(lqr.log.length, 1);
+    document.getElementById("mpc-readout").innerHTML = `
+      <div class="k">MPC peak |e|</div><div class="v ${mpc.peak > eMax ? "bad" : "ok"}">${fmt(mpc.peak, 2)} mm</div>
+      <div class="k">LQR peak |e|</div><div class="v ${lqr.peak > eMax ? "bad" : "ok"}">${fmt(lqr.peak, 2)} mm</div>
+      <div class="k">MPC blind</div><div class="v ${blindPctMpc > 0 ? "bad" : "ok"}">${fmt(blindPctMpc, 1)}%</div>
+      <div class="k">LQR blind</div><div class="v ${blindPctLqr > 0 ? "bad" : "ok"}">${fmt(blindPctLqr, 1)}%</div>
+      <div class="k">MPC lap time</div><div class="v">${fmt(mpc.lap, 2)} s</div>
+      <div class="k">LQR lap time</div><div class="v">${fmt(lqr.lap, 2)} s</div>
+      <div class="k">MPC mean v</div><div class="v">${fmt(mpc.meanV, 0)} mm/s</div>
+      <div class="k">LQR mean v</div><div class="v">${fmt(lqr.meanV, 0)} mm/s</div>`;
+
+    // convergence panel: N-step finite-horizon first move vs infinite-horizon LQR
+    const [A, B] = discreteModel(scenario.v, dt);
+    const Q = [[gains.qe * dt, 0], [0, gains.qth * dt]];
+    const r = gains.r * dt;
+    const x = [4.0, 0.1];
+    const { K: Kinf } = dlqr(A, B, Q, r);
+    const omegaInf = -(Kinf[0] * x[0] + Kinf[1] * x[1]);
+    const omegaN = finiteHorizonFirstMove(A, B, Q, r, x, Math.max(1, Math.round(state.n)));
+    const gap = Math.abs(omegaN - omegaInf);
+    document.getElementById("conv-readout").innerHTML = `
+      <div class="k">ω₀ at N=${state.n}</div><div class="v">${fmt(omegaN, 6)} rad/s</div>
+      <div class="k">ω₀ at N=∞ (LQR)</div><div class="v">${fmt(omegaInf, 6)} rad/s</div>
+      <div class="k">gap</div><div class="v">${gap.toExponential(2)}</div>`;
+
+    if (lastReal) {
+      const r = summarizeRealLog(lastReal, eMax);
+      document.getElementById("mpc-hw-readout").innerHTML = `
+        <div class="k">real peak |e|</div><div class="v ${r.peak > eMax ? "bad" : "ok"}">${fmt(r.peak, 2)} mm</div>
+        <div class="k">real blind</div><div class="v ${r.blindPct > 0 ? "bad" : "ok"}">${fmt(r.blindPct, 1)}%</div>
+        <div class="k">real mean v</div><div class="v">${fmt(r.meanV, 0)} mm/s</div>`;
+    }
+  }
+
+  bindSlider("mpc-n", (val, out) => { state.n = Math.round(val); out.textContent = state.n; recompute(); });
+  bindSlider("mpc-qv", (val, out) => { state.logQv = val; out.textContent = fmt(Math.pow(10, val), 3); recompute(); });
+  document.getElementById("mpc-n").value = state.n;
+  document.getElementById("mpc-qv").value = state.logQv;
+  document.getElementById("mpc-n-val").textContent = state.n;
+  document.getElementById("mpc-qv-val").textContent = fmt(Math.pow(10, state.logQv), 3);
+
+  wireScenario("mpc", recompute);
+  wireHardwareRun("mpc", "mpc", () => ({
+    v_ref: scenario.v, qe: gains.qe, qth: gains.qth, r: gains.r,
+    horizon: state.n, qv: Math.pow(10, state.logQv),
+  }), log => { lastReal = log; recompute(); });
+  window.__recomputeMPC = recompute;
+  recompute();
+}
+
+/* ---------------- Tab navigation ---------------- */
+function selectTab(name) {
+  const btn = document.querySelector(`#tabnav button[data-tab="${name}"]`);
+  if (!btn) return;
+  document.querySelectorAll("#tabnav button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  window.dispatchEvent(new Event("resize"));
+  if (name === "bangbang" && window.__recomputeBangBang) window.__recomputeBangBang();
+  if (name === "pd" && window.__recomputePD) window.__recomputePD();
+  if (name === "lqr" && window.__recomputeLQR) window.__recomputeLQR();
+  if (name === "mpc" && window.__recomputeMPC) window.__recomputeMPC();
+}
+
+function initTabs() {
+  document.querySelectorAll("#tabnav button").forEach(btn => {
+    btn.addEventListener("click", () => { selectTab(btn.dataset.tab); location.hash = btn.dataset.tab; });
+  });
+  window.addEventListener("hashchange", () => {
+    const name = location.hash.replace("#", "");
+    if (name && document.getElementById("tab-" + name)) selectTab(name);
+  });
+  const initial = location.hash.replace("#", "");
+  if (initial && document.getElementById("tab-" + initial)) selectTab(initial);
+}
+
+(async function main() {
+  await loadCalibration();
+  initBangBang();
+  initPD();
+  initLQR();
+  initMPC();
+  initRecalibration();
+  initTabs();
+})();
+</script>
+</body>
+</html>

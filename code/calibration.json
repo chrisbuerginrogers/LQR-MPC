@@ -1,0 +1,9 @@
+{
+  "reflect_black": 20.0,
+  "reflect_white": 67.0,
+  "e_max_mm": 7.5,
+  "track_width_mm": 82.0,
+  "wheel_max_mms": 400.0,
+  "dt": 0.05,
+  "follow_left_edge": true
+}
