@@ -33,7 +33,17 @@ from robot import CAL_PATH, DEFAULTS
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists", "toc"]
+MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists", "toc", "pymdownx.arithmatex"]
+MD_EXTENSION_CONFIGS = {"pymdownx.arithmatex": {"generic": True}}
+
+MATHJAX_SCRIPT = """
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [["\\\\(", "\\\\)"]], displayMath: [["\\\\[", "\\\\]"]] }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+"""
 
 NAV_LINKS = [
     ("/README.md", "Home"),
@@ -96,7 +106,8 @@ def nav_link(href, label, active):
 
 
 def render_markdown_page(md_text, title, active_path):
-    body_html = markdown_lib.markdown(md_text, extensions=MD_EXTENSIONS)
+    body_html = markdown_lib.markdown(
+        md_text, extensions=MD_EXTENSIONS, extension_configs=MD_EXTENSION_CONFIGS)
     nav_html = "\n  ".join(nav_link(href, label, active_path) for href, label in NAV_LINKS)
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -105,6 +116,7 @@ def render_markdown_page(md_text, title, active_path):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 {PAGE_CSS}
+{MATHJAX_SCRIPT}
 </head>
 <body>
 <div class="site-nav">

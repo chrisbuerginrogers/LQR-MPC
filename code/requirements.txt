@@ -2,3 +2,4 @@ legoeducation
 numpy
 matplotlib
 markdown
+pymdown-extensions

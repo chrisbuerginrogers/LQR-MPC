@@ -55,13 +55,23 @@
   main { padding: 16px 20px 40px 20px; max-width: 1180px; margin: 0 auto; }
   .tab { display: none; }
   .tab.active { display: block; }
-  .lede { color: var(--muted); max-width: 78ch; margin: 4px 0 14px 0; font-size: 13.8px; }
+  .lede { color: var(--muted); margin: 4px 0 14px 0; font-size: 13.8px; }
   .lede a { color: var(--accent); }
   .grid2 {
     display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 18px;
     align-items: start;
   }
   @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .grid3 {
+    display: grid; grid-template-columns: minmax(220px, 300px) minmax(260px, 320px) 1fr;
+    gap: 18px; align-items: start;
+  }
+  @media (max-width: 1080px) { .grid3 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 700px) { .grid3 { grid-template-columns: 1fr; } }
+  .grid2-even {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start;
+  }
+  @media (max-width: 640px) { .grid2-even { grid-template-columns: 1fr; } }
   .panel {
     background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px;
     padding: 14px 16px;
@@ -99,6 +109,9 @@
   .eqn { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px;
     background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px;
     padding: 8px 10px; display: inline-block; margin: 2px 6px 2px 0; }
+  .code-block { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; margin: 0; overflow-x: auto; line-height: 1.5; }
   .shared-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
   .site-nav { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
@@ -167,70 +180,101 @@
             mounted forward of the axle and downward-facing over the tape — see
             "The robot" in the <a href="../README.md#the-robot">README</a>.</p>
         </div>
+
         <div class="panel">
-          <h3>Calibration</h3>
-          <table class="caltable" id="cal-table"></table>
-        </div>
-        <div class="panel" id="recal-panel">
-          <h3>Redo calibration</h3>
-          <div class="hw-status" id="recal-status">Checking for code/calibrate_server.py…</div>
-
-          <div id="recal-step-start">
-            <button class="btn" id="recal-connect-sensor">1/4 Connect sensor</button>
-          </div>
-
-          <div id="recal-step-sensor" style="display:none">
-            <div class="readout-grid">
-              <div class="k">live reflection</div><div class="v" id="recal-live">--</div>
-            </div>
-            <div class="field">
-              <button class="btn secondary" id="recal-sample-black">2/4 Sample BLACK (3s)</button>
-              <span class="shared-note" id="recal-black-result"></span>
-            </div>
-            <div class="field">
-              <button class="btn secondary" id="recal-sample-white">3/4 Sample WHITE (3s)</button>
-              <span class="shared-note" id="recal-white-result"></span>
-            </div>
-            <div class="field">
-              <label>Sensor window span (mm)</label>
-              <input type="number" id="recal-span" value="12" step="0.5">
-              <button class="btn secondary" id="recal-set-window">Set window</button>
-              <span class="shared-note" id="recal-window-result"></span>
-            </div>
-            <button class="btn" id="recal-to-motors">4/4 Disconnect sensor, connect motors</button>
-          </div>
-
-          <div id="recal-step-motors" style="display:none">
-            <p class="shared-note">Clear a straight run of at least 1 m before driving.</p>
-            <button class="btn secondary" id="recal-drive-test">Drive straight 2s at 100%</button>
-            <div class="field">
-              <label>Distance traveled (mm)</label>
-              <input type="number" id="recal-distance">
-            </div>
-            <div class="field">
-              <label>Track width (mm)</label>
-              <input type="number" id="recal-trackwidth">
-            </div>
-            <button class="btn" id="recal-save">Save calibration</button>
-          </div>
-
-          <div id="recal-done" style="display:none">
-            <p class="shared-note">Saved — the table above and every tab now use this run's numbers.</p>
-          </div>
+          <h3>What calibration measures</h3>
+          <p style="margin-top:0"><b>To estimate e and θ from one raw sensor number, we need to measure
+            a few things about this specific robot first</b> — that's what
+            calibration is, and it's exactly the 4 steps in the panel below:</p>
+          <ol style="margin:0 0 4px 0; padding-left: 1.2em;">
+            <li>reflection fully over the <b>black</b> tape</li>
+            <li>reflection fully over the <b>white</b> background</li>
+            <li>the width of the sensor's transition region between them (± e_max)</li>
+            <li>wheel speed at 100% and the track width</li>
+          </ol>
         </div>
       </div>
-      <div class="panel">
-        <h3>The model (docs/00-sim.md &amp; 01-lqr.md)</h3>
-        <p style="margin-top:0">Two numbers describe the robot: lateral offset
-          <b>e</b> [mm] and heading error <b>θ</b> [rad]. Forward speed
-          <b>v</b> and curvature <b>κ</b> of the line drive them:</p>
-        <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
-        <div class="eqn">dθ/dt = ω − κ·v</div>
-        <p>ω [rad/s] is the yaw rate every controller below is choosing.
-          The sensor can only report <b>e</b> inside ±e_max — outside that window
-          the reading saturates and the robot goes "blind." That single hard
-          number, measured on the calibration page, is what breaks fixed-speed
-          LQR on sharp turns and is the whole reason MPC gets invented.</p>
+
+      <div>
+        <div class="panel">
+          <h3>The model (docs/00-sim.md &amp; 01-lqr.md)</h3>
+          <p style="margin-top:0">Two numbers describe the robot: lateral offset
+            <b>e</b> [mm] and heading error <b>θ</b> [rad]. Forward speed
+            <b>v</b> and curvature <b>κ</b> of the line drive them:</p>
+          <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
+          <div class="eqn">dθ/dt = ω − κ·v</div>
+          <p>ω [rad/s] is the yaw rate every controller below is choosing.
+            The sensor can only report <b>e</b> inside ±e_max — outside that window
+            the reading saturates and the robot goes "blind." That single hard
+            number is what breaks fixed-speed LQR on sharp turns and is the whole
+            reason MPC gets invented.</p>
+        </div>
+
+        <div class="grid2-even" style="margin-top:14px">
+          <div>
+            <div class="panel">
+              <h3>Calibration</h3>
+              <table class="caltable" id="cal-table"></table>
+            </div>
+
+            <div class="panel" id="recal-panel">
+              <h3>Redo calibration</h3>
+              <div class="hw-status" id="recal-status">Checking for code/calibrate_server.py…</div>
+
+              <div id="recal-step-start">
+                <button class="btn" id="recal-connect-sensor">1/4 Connect sensor</button>
+              </div>
+
+              <div id="recal-step-sensor" style="display:none">
+                <div class="readout-grid">
+                  <div class="k">live reflection</div><div class="v" id="recal-live">--</div>
+                </div>
+                <div class="field">
+                  <button class="btn secondary" id="recal-sample-black">2/4 Sample BLACK (3s)</button>
+                  <span class="shared-note" id="recal-black-result"></span>
+                </div>
+                <div class="field">
+                  <button class="btn secondary" id="recal-sample-white">3/4 Sample WHITE (3s)</button>
+                  <span class="shared-note" id="recal-white-result"></span>
+                </div>
+                <div class="field">
+                  <label>Sensor window span (mm)</label>
+                  <input type="number" id="recal-span" value="12" step="0.5">
+                  <button class="btn secondary" id="recal-set-window">Set window</button>
+                  <span class="shared-note" id="recal-window-result"></span>
+                </div>
+                <button class="btn" id="recal-to-motors">4/4 Disconnect sensor, connect motors</button>
+              </div>
+
+              <div id="recal-step-motors" style="display:none">
+                <p class="shared-note">Clear a straight run of at least 1 m before driving.</p>
+                <button class="btn secondary" id="recal-drive-test">Drive straight 2s at 100%</button>
+                <div class="field">
+                  <label>Distance traveled (mm)</label>
+                  <input type="number" id="recal-distance">
+                </div>
+                <div class="field">
+                  <label>Track width (mm)</label>
+                  <input type="number" id="recal-trackwidth">
+                </div>
+                <button class="btn" id="recal-save">Save calibration</button>
+              </div>
+
+              <div id="recal-done" style="display:none">
+                <p class="shared-note">Saved — the table above and every tab now use this run's numbers.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Live oscilloscope</h3>
+            <div class="plotwrap">
+              <canvas id="scope-plot" data-aspect="0.6"></canvas>
+              <div class="caption">Raw reflection reading, live, y fixed 0–100. Dashed lines are your
+                calibrated black/white values. Starts once the sensor is connected (step 1/4).</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -268,12 +312,45 @@
           </div>
           <div class="readout-grid" id="bb-hw-readout"></div>
         </div>
+        <div class="panel">
+          <h3>Equations</h3>
+          <p style="margin-top:0">Model (same as every other tab):</p>
+          <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
+          <div class="eqn">dθ/dt = ω − κ·v</div>
+          <p>Control law — the sign of e is the only thing bang-bang looks at:</p>
+          <div class="eqn">ω = −ω_mag · sign(e)</div>
+        </div>
       </div>
-      <div class="panel">
-        <div class="plotwrap">
-          <canvas id="bb-plot-e" data-aspect="0.42"></canvas>
-          <div class="caption">e(t) — dashed red lines are the sensor window ±e_max. Solid black =
-            simulated; green = your real robot's last run, if any.</div>
+      <div>
+        <div class="panel">
+          <div class="plotwrap">
+            <canvas id="bb-plot-e" data-aspect="0.42"></canvas>
+            <div class="caption">e(t) — dashed red lines are the sensor window ±e_max. Solid black =
+              simulated; green = your real robot's last run, if any.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>The simulated calculation</h3>
+          <p style="margin-top:0" class="shared-note">The plot above comes from this loop
+            (JS port in this page; Python original in
+            <a href="../code/sim.py"><code>code/sim.py</code></a> and
+            <a href="../code/run_bangbang.py"><code>code/run_bangbang.py</code></a>):</p>
+          <pre class="code-block"><code>e, theta = E_MAX * 0.7, 0.0     # start near the edge of the sensor window
+log = []
+for i in range(int(6.0 / DT)):  # 6 s of simulated time
+    sign = 1.0 if e &gt; 0 else -1.0
+    omega = -omega_mag * sign
+    log.append((i * DT, e))
+    e, theta = step(e, theta, v, omega, kappa=0.0, dt=DT)
+
+def step(e, theta, v, omega, kappa, dt):
+    e_next = e + dt * v * math.sin(theta)
+    th_next = theta + dt * (omega - kappa * v)
+    return e_next, th_next</code></pre>
+          <p class="shared-note">The control law is one line — turn one way or the other at a
+            fixed rate, based only on which side of the line you're on. The model is two lines —
+            lateral offset <b>e</b> drifts by v·sin(θ), heading error <b>θ</b> drifts by the
+            commanded yaw rate ω. No solver, no matrices.</p>
         </div>
       </div>
     </div>
@@ -316,12 +393,44 @@
           </div>
           <div class="readout-grid" id="pd-hw-readout"></div>
         </div>
+        <div class="panel">
+          <h3>Equations</h3>
+          <p style="margin-top:0">Model (same as every other tab):</p>
+          <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
+          <div class="eqn">dθ/dt = ω − κ·v</div>
+          <p>Control law — proportional on the error, plus derivative on the heading θ
+            as a stand-in for de/dt (since ė ≈ vθ):</p>
+          <div class="eqn">ω = −k_p·e − k_d·θ</div>
+        </div>
       </div>
-      <div class="panel">
-        <div class="plotwrap">
-          <canvas id="pd-plot-e" data-aspect="0.42"></canvas>
-          <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
-            ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+      <div>
+        <div class="panel">
+          <div class="plotwrap">
+            <canvas id="pd-plot-e" data-aspect="0.42"></canvas>
+            <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
+              ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>The simulated calculation</h3>
+          <p style="margin-top:0" class="shared-note">The plot above comes from this loop
+            (JS port in this page; Python original in
+            <a href="../code/sim.py"><code>code/sim.py</code></a> and
+            <a href="../code/run_pd.py"><code>code/run_pd.py</code></a>):</p>
+          <pre class="code-block"><code>s = e = theta = 0.0
+log = []
+for i in range(int(t_max / dt)):
+    if s &gt; track.length:
+        break
+    e_measured = measure(e, e_max)     # sensor saturates outside +-e_max
+    omega = -kp * e_measured - kd * theta
+    log.append((i * dt, e, theta))
+    kappa = track.kappa(s)             # 0 on the straight, 1/R in the turn
+    e, theta = step(e, theta, v, omega, kappa, dt)
+    s += v * dt</code></pre>
+          <p class="shared-note">Same plant model as bang-bang, plus one new piece: <code>track.kappa(s)</code>
+            looks up how curved the line is at the robot's current position along it, so the
+            simulated turn actually bends the line under a fixed-speed robot.</p>
         </div>
       </div>
     </div>
@@ -703,11 +812,12 @@ class Chart {
     this.series = [];
     this.hlines = [];
     this.vspan = null;
+    this.yDomain = null;
     this.xlabel = ""; this.ylabel = ""; this.title = "";
     new ResizeObserver(() => this.draw()).observe(canvas.parentElement);
   }
-  setData({ series = [], hlines = [], vspan = null, xlabel, ylabel, title }) {
-    this.series = series; this.hlines = hlines; this.vspan = vspan;
+  setData({ series = [], hlines = [], vspan = null, yDomain = null, xlabel, ylabel, title }) {
+    this.series = series; this.hlines = hlines; this.vspan = vspan; this.yDomain = yDomain;
     if (xlabel !== undefined) this.xlabel = xlabel;
     if (ylabel !== undefined) this.ylabel = ylabel;
     if (title !== undefined) this.title = title;
@@ -739,10 +849,15 @@ class Chart {
     if (!xs.length) xs = [0, 1];
     if (!ys.length) ys = [-1, 1];
     let xmin = Math.min(...xs), xmax = Math.max(...xs);
-    let ymin = Math.min(...ys), ymax = Math.max(...ys);
+    let ymin, ymax;
+    if (this.yDomain) {
+      [ymin, ymax] = this.yDomain;
+    } else {
+      ymin = Math.min(...ys); ymax = Math.max(...ys);
+      const ypad = (ymax - ymin) * 0.15 || 1;
+      ymin -= ypad; ymax += ypad;
+    }
     if (xmax - xmin < 1e-6) xmax = xmin + 1;
-    const ypad = (ymax - ymin) * 0.15 || 1;
-    ymin -= ypad; ymax += ypad;
 
     const xToPx = x => padL + (x - xmin) / (xmax - xmin) * plotW;
     const yToPx = y => padT + (1 - (y - ymin) / (ymax - ymin)) * plotH;
@@ -1140,6 +1255,34 @@ function initRecalibration() {
     statusEl.className = "hw-status" + (cls ? " " + cls : "");
   }
 
+  // -- live oscilloscope: fixed y in [0,100], scrolling window of raw reflection --
+  const scopeChart = new Chart(document.getElementById("scope-plot"));
+  let scopeBuffer = [];
+  let scopeStart = null;
+  const SCOPE_WINDOW_S = 12;
+
+  function pushScope(reflection) {
+    const now = performance.now() / 1000;
+    if (scopeStart === null) scopeStart = now;
+    const t = now - scopeStart;
+    scopeBuffer.push([t, reflection]);
+    scopeBuffer = scopeBuffer.filter(([pt]) => t - pt <= SCOPE_WINDOW_S);
+    scopeChart.setData({
+      series: [{ points: scopeBuffer, color: "#111", width: 2 }],
+      hlines: [
+        { y: CAL.reflect_black, color: "#666" },
+        { y: CAL.reflect_white, color: "#999" },
+      ],
+      yDomain: [0, 100],
+      xlabel: "t [s]", ylabel: "reflection",
+    });
+  }
+  scopeChart.setData({
+    series: [], yDomain: [0, 100],
+    hlines: [{ y: CAL.reflect_black, color: "#666" }, { y: CAL.reflect_white, color: "#999" }],
+    xlabel: "t [s]", ylabel: "reflection",
+  });
+
   checkHwServer().then(ok => {
     if (ok) {
       setStatus("Connected to code/calibrate_server.py.", "ok");
@@ -1161,6 +1304,7 @@ function initRecalibration() {
         try {
           const d = await hwApi("/api/cal/live");
           document.getElementById("recal-live").textContent = d.reflection.toFixed(1);
+          pushScope(d.reflection);
         } catch (err) { /* transient poll error, ignore */ }
       }, 200);
     } catch (err) {
