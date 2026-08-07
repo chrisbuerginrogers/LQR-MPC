@@ -427,8 +427,18 @@ for i in range(int(t_max / dt)):
     log.append((i * dt, e, theta))
     kappa = track.kappa(s)             # 0 on the straight, 1/R in the turn
     e, theta = step(e, theta, v, omega, kappa, dt)
-    s += v * dt</code></pre>
-          <p class="shared-note">Same plant model as bang-bang, plus one new piece: <code>track.kappa(s)</code>
+    s += v * dt
+
+def measure(e, e_max):
+    return max(-e_max, min(e_max, e))   # sensor only sees +-e_max either side
+
+def step(e, theta, v, omega, kappa, dt):
+    e_next = e + dt * v * math.sin(theta)
+    th_next = theta + dt * (omega - kappa * v)
+    return e_next, th_next</code></pre>
+          <p class="shared-note">Same plant model as bang-bang, plus two new pieces:
+            <code>measure()</code> clips e to what the sensor can actually report (bang-bang's
+            control law didn't need the clipped value, only its sign), and <code>track.kappa(s)</code>
             looks up how curved the line is at the robot's current position along it, so the
             simulated turn actually bends the line under a fixed-speed robot.</p>
         </div>
@@ -485,12 +495,59 @@ for i in range(int(t_max / dt)):
           </div>
           <div class="readout-grid" id="lqr-hw-readout"></div>
         </div>
+        <div class="panel">
+          <h3>Equations</h3>
+          <p style="margin-top:0">Model (same as every other tab):</p>
+          <div class="eqn">de/dt&nbsp;&nbsp;&nbsp;= v·sin(θ) ≈ v·θ</div>
+          <div class="eqn">dθ/dt = ω − κ·v</div>
+          <p>Control law — same form as P/PD, but the gains aren't guessed:</p>
+          <div class="eqn">ω = −k_e·e − k_θ·θ</div>
+          <p>Gains, closed form (continuous-time; full discrete-time derivation in
+            <a href="01-lqr.md">docs/01-lqr.md</a>):</p>
+          <div class="eqn">k_e = √(Q_e / R)</div>
+          <div class="eqn">k_θ = √(Q_θ/R + 2v·k_e)</div>
+        </div>
       </div>
-      <div class="panel">
-        <div class="plotwrap">
-          <canvas id="lqr-plot-e" data-aspect="0.42"></canvas>
-          <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
-            ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+      <div>
+        <div class="panel">
+          <div class="plotwrap">
+            <canvas id="lqr-plot-e" data-aspect="0.42"></canvas>
+            <div class="caption">e(t) — shaded region is the simulated turn; dashed red lines are
+              ±e_max. Solid black = simulated; green = your real robot's last run, if any.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Track shape (plan view)</h3>
+          <div class="plotwrap">
+            <canvas id="lqr-track-plot" data-aspect="0.55"></canvas>
+            <div class="caption">Top-down shape of the straight → R-turn → straight track above,
+              to true scale. Gray = centerline; black = the simulated robot's actual path, with its
+              deviation from the line exaggerated so it's visible (e_max is a few mm; the track is
+              hundreds). Red dots mark where it went blind.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>The simulated calculation</h3>
+          <p style="margin-top:0" class="shared-note">The plot above comes from this loop
+            (JS port in this page; Python original in
+            <a href="../code/sim.py"><code>code/sim.py</code></a>):</p>
+          <pre class="code-block"><code>k_e, k_th = lqr_gains_discrete(v_cmd, dt)   # solved once, offline (Riccati)
+s = e = theta = 0.0
+log = []
+for i in range(int(t_max / dt)):
+    if s &gt; track.length:
+        break
+    omega = -k_e * measure(e, e_max) - k_th * theta
+    log.append((i * dt, s, e, theta, v_cmd, omega))
+    kappa = track.kappa(s)
+    e, theta = step(e, theta, v_cmd, omega, kappa, dt)
+    s += v_cmd * dt</code></pre>
+          <p class="shared-note">Same loop as P/PD — the only thing that changed is where
+            k_e and k_θ come from. P/PD, you pick them by hand. Here,
+            <code>lqr_gains_discrete</code> solves the discrete algebraic Riccati equation
+            once, before the loop starts, and the loop never touches them again (see
+            "Cost weights" → "Gains" above, and the derivation in
+            <a href="01-lqr.md">docs/01-lqr.md</a>).</p>
         </div>
       </div>
     </div>
@@ -543,16 +600,70 @@ for i in range(int(t_max / dt)):
           </div>
           <div class="readout-grid" id="mpc-hw-readout"></div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="plotwrap">
-          <canvas id="mpc-plot-e" data-aspect="0.34"></canvas>
-          <div class="caption">e(t) — solid red = simulated MPC, dashed blue = simulated fixed-speed
-            LQR, solid green = your real robot's last MPC run, if any.</div>
+        <div class="panel">
+          <h3>Equations</h3>
+          <p style="margin-top:0">Steering law is identical to LQR's, just re-solved for
+            whichever speed v is currently chosen:</p>
+          <div class="eqn">ω = −k_e(v)·e − k_θ(v)·θ</div>
+          <p>What's new: v is no longer fixed. Every control period it's re-picked from a
+            short list of candidates by minimizing a short-horizon cost:</p>
+          <div class="eqn">v* = argmin_v&nbsp; Σ (Q_e·e² + Q_θ·θ²)dt&nbsp; +&nbsp; Q_v(v−v_ref)²·N·dt</div>
+          <p class="shared-note">sum taken over N steps of the model above, rolled forward
+            under the previewed curvature — see "The simulated calculation" below.</p>
         </div>
-        <div class="plotwrap">
-          <canvas id="mpc-plot-v" data-aspect="0.34"></canvas>
-          <div class="caption">v(t) — MPC's speed schedule vs LQR's constant v_ref; green = real robot</div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="plotwrap">
+            <canvas id="mpc-plot-e" data-aspect="0.34"></canvas>
+            <div class="caption">e(t) — solid red = simulated MPC, dashed blue = simulated fixed-speed
+              LQR, solid green = your real robot's last MPC run, if any.</div>
+          </div>
+          <div class="plotwrap">
+            <canvas id="mpc-plot-v" data-aspect="0.34"></canvas>
+            <div class="caption">v(t) — MPC's speed schedule vs LQR's constant v_ref; green = real robot</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>The simulated calculation</h3>
+          <p style="margin-top:0" class="shared-note">The plots above come from this loop
+            (JS port in this page; Python original in
+            <a href="../code/sim.py"><code>code/sim.py</code></a>):</p>
+          <pre class="code-block"><code>def mpc_choose_speed(e, theta, s, track, candidates, horizon,
+                      dt, e_max, v_ref, q_e, q_th, q_v, pen=1e4):
+    best_cost, best_v = float("inf"), candidates[0]
+    for v in candidates:
+        k_e, k_th = lqr_gains_discrete(v, dt)   # re-solved per candidate speed
+        ep, thp, sp, cost = e, theta, s, 0.0
+        for _ in range(horizon):                 # roll forward under LQR steering
+            omega = -k_e * measure(ep, e_max) - k_th * thp
+            cost += (q_e * ep**2 + q_th * thp**2) * dt
+            cost += pen * max(0.0, abs(ep) - e_max)**2 * dt   # blindness penalty
+            ep, thp = step(ep, thp, v, omega, track.kappa(sp), dt)
+            sp += v * dt
+        cost += q_v * (v - v_ref)**2 * horizon * dt   # prefer staying near v_ref
+        if cost &lt; best_cost:
+            best_cost, best_v = cost, v
+    return best_v
+
+s = e = theta = 0.0
+log = []
+for i in range(int(t_max / dt)):
+    if s &gt; track.length:
+        break
+    v = mpc_choose_speed(e, theta, s, track, candidates, horizon, dt, e_max, ...)
+    k_e, k_th = lqr_gains_discrete(v, dt)
+    omega = -k_e * measure(e, e_max) - k_th * theta
+    log.append((i * dt, s, e, theta, v, omega))
+    e, theta = step(e, theta, v, omega, track.kappa(s), dt)
+    s += v * dt</code></pre>
+          <p class="shared-note">The outer loop is identical to LQR's. The new part is
+            <code>mpc_choose_speed</code>: for every candidate forward speed, it re-solves
+            the LQR gains for that speed and rolls the model <b>horizon</b> steps into the
+            future using the previewed curvature, scoring how much error and "blindness"
+            that speed would cause. The candidate with the lowest predicted cost wins, its
+            first move gets applied, and the whole search reruns next control period — a
+            receding horizon.</p>
         </div>
       </div>
     </div>
@@ -671,6 +782,19 @@ function makeTurnTrack(radius, leadIn = 400, straightOut = 400) {
     return 0;
   }
   return { segments, length, kappa, leadIn, arc, straightOut };
+}
+
+// -- plan-view (x, y, heading) of the track centerline at arclength s, closed form
+// since kappa is piecewise-constant: 0 on the straights, 1/radius on the arc.
+function trackPosition(s, leadIn, radius, arcLen) {
+  if (s <= leadIn) return { x: s, y: 0, heading: 0 };
+  const arcS = Math.min(s - leadIn, arcLen);
+  const heading = arcS / radius;
+  const x1 = leadIn + radius * Math.sin(heading);
+  const y1 = radius * (1 - Math.cos(heading));
+  if (s <= leadIn + arcLen) return { x: x1, y: y1, heading };
+  const ds2 = s - (leadIn + arcLen);
+  return { x: x1 + ds2 * Math.cos(heading), y: y1 + ds2 * Math.sin(heading), heading };
 }
 
 function runFixedSpeed(track, v, ke, kth, dt, eMax, tMax = 14) {
@@ -946,6 +1070,109 @@ class Chart {
 }
 
 /* ============================================================
+   Track plan-view (top-down x/y shape of the simulated track),
+   no external dependencies. Draws the centerline to true scale and
+   the robot's e(t) deviation from it, exaggerated so it's visible --
+   e_max is a few mm, the track is hundreds of mm long.
+   ============================================================ */
+class TrackPlot {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.data = null;
+    new ResizeObserver(() => this.draw()).observe(canvas.parentElement);
+  }
+  setData(data) { this.data = data; this.draw(); }
+  draw() {
+    if (!this.data) return;
+    const { track, log, v, eMax, radius } = this.data;
+    const canvas = this.canvas, ctx = this.ctx;
+    const parent = canvas.parentElement;
+    const cssW = Math.max(parent.clientWidth, 240);
+    const aspect = parseFloat(canvas.dataset.aspect || "0.55");
+    const cssH = Math.max(160, cssW * aspect);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+    canvas.style.width = cssW + "px"; canvas.style.height = cssH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const style = getComputedStyle(document.documentElement);
+    const fg = style.getPropertyValue("--fg").trim() || "#222";
+    const muted = style.getPropertyValue("--muted").trim() || "#888";
+    const grid = style.getPropertyValue("--grid").trim() || "#ddd";
+    const bg = style.getPropertyValue("--panel-bg").trim() || "#fff";
+    const bad = style.getPropertyValue("--bad").trim() || "#b3261e";
+    const accent = style.getPropertyValue("--accent").trim() || "#2563eb";
+
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, cssW, cssH);
+
+    // exaggerate e so the wobble is visible against a track hundreds of mm long
+    const exaggeration = Math.max(3, Math.min(40, (track.length * 0.05) / Math.max(eMax, 1e-6)));
+
+    const centerline = [];
+    const N = 240;
+    for (let i = 0; i <= N; i++) {
+      centerline.push(trackPosition((i / N) * track.length, track.leadIn, radius, track.arc));
+    }
+    const path = log.map(r => {
+      const s = Math.min(r.t * v, track.length);
+      const p = trackPosition(s, track.leadIn, radius, track.arc);
+      const nx = -Math.sin(p.heading), ny = Math.cos(p.heading);
+      const off = r.e * exaggeration;
+      return { x: p.x + off * nx, y: p.y + off * ny, blind: Math.abs(r.e) >= eMax * 0.999 };
+    });
+
+    const allX = centerline.map(p => p.x).concat(path.map(p => p.x));
+    const allY = centerline.map(p => p.y).concat(path.map(p => p.y), [0]);
+    const xMin = Math.min(...allX), xMax = Math.max(...allX);
+    const yMin = Math.min(...allY), yMax = Math.max(...allY);
+    const worldW = Math.max(xMax - xMin, 1), worldH = Math.max(yMax - yMin, 1);
+    const pad = 24;
+    const availW = cssW - 2 * pad, availH = cssH - 2 * pad;
+    const scale = Math.min(availW / worldW, availH / worldH);
+    const drawW = worldW * scale, drawH = worldH * scale;
+    const originPxX = pad + (availW - drawW) / 2 - xMin * scale;
+    const originPxY = cssH - pad - (availH - drawH) / 2 + yMin * scale;
+    const toPx = (x, y) => [originPxX + x * scale, originPxY - y * scale];
+
+    ctx.strokeStyle = grid; ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.beginPath();
+    centerline.forEach((p, i) => {
+      const [px, py] = toPx(p.x, p.y);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+
+    ctx.strokeStyle = fg; ctx.lineWidth = 2;
+    ctx.beginPath();
+    path.forEach((p, i) => {
+      const [px, py] = toPx(p.x, p.y);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+
+    ctx.fillStyle = bad;
+    for (const p of path) {
+      if (!p.blind) continue;
+      const [px, py] = toPx(p.x, p.y);
+      ctx.beginPath(); ctx.arc(px, py, 1.6, 0, 2 * Math.PI); ctx.fill();
+    }
+
+    const [sx, sy] = toPx(0, 0);
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = muted; ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText("start", sx + 6, sy - 4);
+
+    ctx.fillStyle = fg; ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(`deviation exaggerated ${fmt(exaggeration, 0)}×`, 6, 4);
+  }
+}
+
+/* ============================================================
    UI wiring
    ============================================================ */
 function bindSlider(id, onChange) {
@@ -1103,6 +1330,7 @@ function initPD() {
 function initLQR() {
   document.getElementById("scenario-panel-lqr").innerHTML = scenarioPanelHTML("lqr");
   const chart = new Chart(document.getElementById("lqr-plot-e"));
+  const trackPlot = new TrackPlot(document.getElementById("lqr-track-plot"));
   let lastReal = null;
 
   function recompute() {
@@ -1123,6 +1351,7 @@ function initLQR() {
       vspan: { x0: turnStartT, x1: turnEndT },
       xlabel: "t [s]", ylabel: "e [mm]",
     });
+    trackPlot.setData({ track, log, v: scenario.v, eMax, radius: scenario.R });
 
     document.getElementById("lqr-gains-readout").innerHTML = `
       <div class="k">k_e (discrete, used)</div><div class="v">${fmt(keD, 4)}</div>
