@@ -150,6 +150,21 @@ $$\dot{\mathbf{x}} = A\mathbf{x} + Bu, \qquad
 A = \begin{bmatrix} 0 & v \\ 0 & 0 \end{bmatrix}, \qquad
 B = \begin{bmatrix} 0 \\ 1 \end{bmatrix}$$
 
+Recall $u = \omega$ — that's the whole input, not a scaled version of it. Expand
+$A\mathbf{x} + Bu$ and check it against the two lines above term by term:
+
+$$A\mathbf{x} + Bu = \begin{bmatrix} 0 & v \\ 0 & 0 \end{bmatrix}\begin{bmatrix} e \\ \theta \end{bmatrix}
++ \begin{bmatrix} 0 \\ 1 \end{bmatrix}u
+= \begin{bmatrix} v\theta \\ 0 \end{bmatrix} + \begin{bmatrix} 0 \\ u \end{bmatrix}
+= \begin{bmatrix} v\theta \\ u \end{bmatrix}$$
+
+Row 1 gives $\dot e = v\theta$ — that's where the $v$ in $A$'s top-right corner
+comes from, it's literally "how much of $\theta$ leaks into $\dot e$." Row 2
+gives $\dot\theta = u$: with $\kappa = 0$, $\dot\theta = \omega - \kappa v$
+reduces to just $\omega$, i.e. just $u$, with no scaling and no dependence on
+$e$ or $\theta$ themselves — which is exactly why row 2 of $A$ is $[0, 0]$
+and $B$'s second entry is a bare $1$.
+
 Three things to notice, because each one comes back later:
 
 - **This is a double integrator.** Yaw rate integrates into heading, heading

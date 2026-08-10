@@ -65,6 +65,68 @@ The single sensor is not a limitation to apologize for. It is the pedagogy:
   compute in advance the speed at which their robot will fail, then go watch it
   fail at that speed.
 
+## Where the equations come from
+
+Every equation in this course falls out of two decisions, made in order:
+**what to track**, then **how to score it**. Nothing is handed down — every
+symbol traces back to either geometry or a cost weight a student picked.
+
+**The state: why $(e, \theta)$ and nothing else.** A robot following a line
+only needs to know two things about itself relative to the line: how far off
+it is ($e$, lateral offset in mm) and which way it's pointed relative to the
+line's own direction ($\theta$, heading error in rad). Two robots with the
+same $(e, \theta)$ will do the identical thing next, no matter where on the
+track they are or what shape the track took to get there — global position
+and absolute heading are thrown away on purpose, because the controller never
+needs them. That's also exactly why the sensor's single saturating number is
+a genuine handicap and not just an annoyance: it can report $e$, sometimes,
+but it never reports $\theta$ at all.
+
+**The kinematics: two lines, both from projecting velocity.** Put the robot
+at heading $\theta$ relative to the line, moving forward at speed $v$. The
+component of that velocity *perpendicular* to the line is $v\sin\theta$ —
+that is the rate $e$ grows or shrinks:
+
+$$\dot e = v \sin\theta \approx v\,\theta$$
+
+(the small-angle approximation holds to within about 2% out to 20°, which
+covers everything a sane line follower should ever see — and it is also the
+step that makes the model linear, which matters in a moment). $\theta$ itself
+is *heading relative to the line*, so it changes for two independent reasons:
+the robot turns at whatever yaw rate $\omega$ it is commanded, and the line
+itself turns underneath it as the robot travels along a curve of curvature
+$\kappa$ at speed $v$ (a curve of radius $R$ turns at $v/R = \kappa v$ rad per
+second, by the definition of curvature):
+
+$$\dot\theta = \omega - \kappa v$$
+
+Together these two lines are the entire plant. Full derivation, with the
+matrix form: [docs/01-lqr.md, "Step 2: the model"](docs/01-lqr.md#step-2-the-model).
+
+**The cost, and why the gains come out the way they do.** Linearizing
+$\sin\theta \to \theta$ is what turns this into a linear system
+$\dot{\mathbf x} = A\mathbf x + Bu$ — and a linear system is what lets you
+pose control as *minimize a quadratic cost*, solve it exactly, and get a
+state-feedback gain back in closed form instead of a number you tuned by
+hand:
+
+$$J = \int_0^\infty \big(q_e e^2 + q_\theta \theta^2 + r\,\omega^2\big)\,dt$$
+
+Each weight is a direct trade you are choosing, in the units of the thing it
+costs: $q_e$ is how much you mind being 1 mm off the line for a second,
+$q_\theta$ is how much you mind pointing the wrong way, $r$ is how much you
+mind spending yaw rate to fix either. Push the Riccati equation through for
+*this specific* $A$, $B$ (only $v$ appears in $A$, and the whole thing is low
+enough dimension to do by hand) and it collapses to
+
+$$k_e = \sqrt{q_e / r}, \qquad k_\theta = \sqrt{q_\theta/r + 2vk_e}$$
+
+worked from scratch, on a whiteboard, in
+[docs/01-lqr.md, "Solving it by hand"](docs/01-lqr.md#solving-it-by-hand).
+MPC (Session 5) doesn't introduce new physics — it reuses this exact model
+and this exact steering law, and only changes which $v$ gets plugged in each
+control period. See [docs/02-mpc.md](docs/02-mpc.md) for that derivation.
+
 ## Course arc
 
 Seven sessions, 60–90 minutes each. Sessions 0–2 need no theory background;

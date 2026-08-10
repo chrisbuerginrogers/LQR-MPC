@@ -17,7 +17,7 @@ come from?".
 """
 
 from robot import LineFollower, curvature_estimate
-from sim import lqr_gains_discrete, measure, step
+from sim import coerce, lqr_gains_discrete, step
 
 
 def run_bangbang(cal, duration, v=100.0, omega_mag=2.0):
@@ -72,7 +72,7 @@ def _mpc_choose_speed(e, theta, kappa_hat, candidates, horizon, dt, e_max,
         k_e, k_th = lqr_gains_discrete(v, dt, qe, qth, r)
         ep, thp, cost = e, theta, 0.0
         for _ in range(horizon):
-            omega = -k_e * measure(ep, e_max) - k_th * thp
+            omega = -k_e * coerce(ep, e_max) - k_th * thp
             cost += (qe * ep ** 2 + qth * thp ** 2) * dt
             cost += pen * max(0.0, abs(ep) - e_max) ** 2 * dt
             ep, thp = step(ep, thp, v, omega, kappa_hat, dt)

@@ -113,7 +113,7 @@ the analytic formula above is a sanity check, not what runs.
 
 ## Plant, sensor, and track
 
-**`measure(e, e_max)`** is the single most important function in the file for
+**`coerce(e, e_max)`** is the single most important function in the file for
 teaching purposes: it clips $e$ to $\pm e_{max}$, which is the one thing a
 single light sensor can and cannot tell you. Outside the window the sign is
 still right but the magnitude is a lie — see

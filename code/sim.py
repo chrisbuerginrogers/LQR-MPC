@@ -103,7 +103,7 @@ def step(e, theta, v, omega, kappa, dt=DT):
     return e_next, th_next
 
 
-def measure(e, e_max=E_MAX):
+def coerce(e, e_max=E_MAX):
     """What one light sensor can actually tell you: e, saturated.
 
     Outside +-e_max the sensor is fully on black or fully on white and reports
@@ -158,7 +158,7 @@ def run_lqr(track, v_cmd=V_REF, dt=DT, e_max=E_MAX, t_max=12.0):
     for i in range(n):
         if s > track.length:
             break
-        omega = -k_e * measure(e, e_max) - k_th * theta
+        omega = -k_e * coerce(e, e_max) - k_th * theta
         log.append((i * dt, s, e, theta, v_cmd, omega))
         kappa = track.kappa(s)
         e, theta = step(e, theta, v_cmd, omega, kappa, dt)
@@ -188,7 +188,7 @@ def mpc_choose_speed(e, theta, s, track, candidates, horizon=15, dt=DT,
         cost = 0.0
         peak = abs(ep)
         for _ in range(horizon):
-            omega = -k_e * measure(ep, e_max) - k_th * thp
+            omega = -k_e * coerce(ep, e_max) - k_th * thp
             cost += (q_e * ep ** 2 + q_th * thp ** 2) * dt
             cost += pen * max(0.0, abs(ep) - e_max) ** 2 * dt
             ep, thp = step(ep, thp, v, omega, track.kappa(sp), dt)
@@ -212,7 +212,7 @@ def run_mpc(track, dt=DT, e_max=E_MAX, t_max=12.0,
             break
         v, _ = mpc_choose_speed(e, theta, s, track, candidates, horizon, dt, e_max)
         k_e, k_th = lqr_gains_discrete(v, dt)
-        omega = -k_e * measure(e, e_max) - k_th * theta
+        omega = -k_e * coerce(e, e_max) - k_th * theta
         log.append((i * dt, s, e, theta, v, omega))
         e, theta = step(e, theta, v, omega, track.kappa(s), dt)
         s += v * dt

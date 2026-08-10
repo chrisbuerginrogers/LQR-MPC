@@ -121,6 +121,9 @@
   .site-nav a:hover { background: var(--grid); color: var(--fg); }
   .site-nav a.active { background: var(--accent); color: #fff; }
   .site-nav a.robot-btn { margin-left: auto; background: var(--ok); color: #fff; font-weight: 600; }
+  .site-nav a.robot-btn.disabled { background: var(--muted); pointer-events: none; }
+  .site-nav .robot-warn { flex-basis: 100%; text-align: right; font-size: 11.5px;
+    color: var(--bad); display: none; }
   .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
     padding: 8px 14px; font-size: 13px; font-family: inherit; cursor: pointer; margin: 3px 6px 3px 0; }
   .btn:disabled { opacity: 0.5; cursor: default; }
@@ -136,13 +139,14 @@
 <body>
 
 <div class="site-nav" id="site-nav">
-  <a href="/README.md">Home</a>
-  <a href="/docs/00-sim.md">00 · sim.py</a>
-  <a href="/docs/01-lqr.md">01 · LQR</a>
-  <a href="/docs/02-mpc.md">02 · MPC</a>
-  <a href="/docs/03-lqr-vs-mpc.md">03 · LQR vs MPC</a>
+  <a href="/README.md" data-doc="/README.md">Home</a>
+  <a href="/docs/00-sim.md" data-doc="/docs/00-sim.md">00 · sim.py</a>
+  <a href="/docs/01-lqr.md" data-doc="/docs/01-lqr.md">01 · LQR</a>
+  <a href="/docs/02-mpc.md" data-doc="/docs/02-mpc.md">02 · MPC</a>
+  <a href="/docs/03-lqr-vs-mpc.md" data-doc="/docs/03-lqr-vs-mpc.md">03 · LQR vs MPC</a>
   <a href="/docs/interactive.html" class="active">Interactive</a>
   <a href="#robot" class="robot-btn" id="nav-robot-btn">🔌 Connect to robot</a>
+  <span class="robot-warn" id="nav-robot-warn"></span>
 </div>
 
 <header>
@@ -422,25 +426,39 @@ log = []
 for i in range(int(t_max / dt)):
     if s &gt; track.length:
         break
-    e_measured = measure(e, e_max)     # sensor saturates outside +-e_max
+    e_measured = coerce(e, e_max)     # sensor saturates outside +-e_max
     omega = -kp * e_measured - kd * theta
     log.append((i * dt, e, theta))
     kappa = track.kappa(s)             # 0 on the straight, 1/R in the turn
     e, theta = step(e, theta, v, omega, kappa, dt)
     s += v * dt
 
-def measure(e, e_max):
+def coerce(e, e_max):
     return max(-e_max, min(e_max, e))   # sensor only sees +-e_max either side
 
 def step(e, theta, v, omega, kappa, dt):
     e_next = e + dt * v * math.sin(theta)
     th_next = theta + dt * (omega - kappa * v)
-    return e_next, th_next</code></pre>
+    return e_next, th_next
+
+class Track:
+    def __init__(self, segments):           # [(length_mm, radius_mm|None), ...]
+        self.length = sum(L for L, _ in segments)
+
+    def kappa(self, s):                      # curvature at arclength s
+        acc = 0.0
+        for L, radius in self.segments:
+            if s &lt; acc + L:
+                return 0.0 if radius is None else 1.0 / radius
+            acc += L
+        return 0.0</code></pre>
           <p class="shared-note">Same plant model as bang-bang, plus two new pieces:
-            <code>measure()</code> clips e to what the sensor can actually report (bang-bang's
+            <code>coerce()</code> clips e to what the sensor can actually report (bang-bang's
             control law didn't need the clipped value, only its sign), and <code>track.kappa(s)</code>
-            looks up how curved the line is at the robot's current position along it, so the
-            simulated turn actually bends the line under a fixed-speed robot.</p>
+            looks up how curved the line is at the robot's current position along it — 0 on the
+            straights, 1/R on the turn — by walking the track's <code>segments</code> until it finds
+            the one <code>s</code> falls in; <code>track.length</code> is just their total, which is
+            what tells the loop above when the robot has reached the end.</p>
         </div>
       </div>
     </div>
@@ -537,7 +555,7 @@ log = []
 for i in range(int(t_max / dt)):
     if s &gt; track.length:
         break
-    omega = -k_e * measure(e, e_max) - k_th * theta
+    omega = -k_e * coerce(e, e_max) - k_th * theta
     log.append((i * dt, s, e, theta, v_cmd, omega))
     kappa = track.kappa(s)
     e, theta = step(e, theta, v_cmd, omega, kappa, dt)
@@ -636,7 +654,7 @@ for i in range(int(t_max / dt)):
         k_e, k_th = lqr_gains_discrete(v, dt)   # re-solved per candidate speed
         ep, thp, sp, cost = e, theta, s, 0.0
         for _ in range(horizon):                 # roll forward under LQR steering
-            omega = -k_e * measure(ep, e_max) - k_th * thp
+            omega = -k_e * coerce(ep, e_max) - k_th * thp
             cost += (q_e * ep**2 + q_th * thp**2) * dt
             cost += pen * max(0.0, abs(ep) - e_max)**2 * dt   # blindness penalty
             ep, thp = step(ep, thp, v, omega, track.kappa(sp), dt)
@@ -653,7 +671,7 @@ for i in range(int(t_max / dt)):
         break
     v = mpc_choose_speed(e, theta, s, track, candidates, horizon, dt, e_max, ...)
     k_e, k_th = lqr_gains_discrete(v, dt)
-    omega = -k_e * measure(e, e_max) - k_th * theta
+    omega = -k_e * coerce(e, e_max) - k_th * theta
     log.append((i * dt, s, e, theta, v, omega))
     e, theta = step(e, theta, v, omega, track.kappa(s), dt)
     s += v * dt</code></pre>
@@ -671,8 +689,13 @@ for i in range(int(t_max / dt)):
 
 </main>
 
-<footer>Reads <code>code/calibration.json</code> when served over HTTP from the repo root, e.g.
-  <code>python3 -m http.server</code> then open <code>/docs/interactive.html</code>.</footer>
+<footer>Reads <code>code/calibration.json</code> when served over HTTP from the repo root —
+  run <code>.venv/bin/python3 code/calibrate_server.py</code> and open
+  <code>/docs/interactive.html</code>. A bare <code>python3 -m http.server</code> will also
+  load the calibration numbers, but the nav links above will show raw markdown instead of
+  rendered doc pages, and the hardware buttons won't work — only
+  <code>calibrate_server.py</code> renders <code>README.md</code>/<code>docs/*.md</code> and
+  talks to the robot.</footer>
 
 <script>
 "use strict";
@@ -688,7 +711,7 @@ function step(e, theta, v, omega, kappa, dt) {
   return [eNext, thNext];
 }
 
-function measure(e, eMax) {
+function coerce(e, eMax) {
   return Math.max(-eMax, Math.min(eMax, e));
 }
 
@@ -804,7 +827,7 @@ function runFixedSpeed(track, v, ke, kth, dt, eMax, tMax = 14) {
   let blind = 0, peak = 0;
   for (let i = 0; i < n; i++) {
     if (s > track.length) break;
-    const em = measure(e, eMax);
+    const em = coerce(e, eMax);
     const saturated = Math.abs(e) >= eMax * 0.999;
     const omega = -ke * em - kth * theta;
     log.push({ t: i * dt, e, theta, v, omega });
@@ -824,7 +847,7 @@ function mpcChooseSpeed(e, theta, s, track, candidates, horizon, dt, eMax, vRef,
     const [ke, kth] = lqrGainsDiscrete(v, dt, qe, qth, r);
     let ep = e, thp = theta, sp = s, cost = 0, peak = Math.abs(ep);
     for (let k = 0; k < horizon; k++) {
-      const em = measure(ep, eMax);
+      const em = coerce(ep, eMax);
       const omega = -ke * em - kth * thp;
       cost += (qe * ep * ep + qth * thp * thp) * dt;
       cost += pen * Math.pow(Math.max(0, Math.abs(ep) - eMax), 2) * dt;
@@ -849,7 +872,7 @@ function runMPC(track, dt, eMax, candidates, horizon, vRef, qe, qth, r, qv, tMax
     if (s > track.length) break;
     const { v } = mpcChooseSpeed(e, theta, s, track, candidates, horizon, dt, eMax, vRef, qe, qth, r, qv);
     const [ke, kth] = lqrGainsDiscrete(v, dt, qe, qth, r);
-    const em = measure(e, eMax);
+    const em = coerce(e, eMax);
     const saturated = Math.abs(e) >= eMax * 0.999;
     const omega = -ke * em - kth * theta;
     log.push({ t: i * dt, e, theta, v, omega });
@@ -903,8 +926,10 @@ async function loadCalibration() {
     document.getElementById("cal-banner").innerHTML =
       `<div class="banner">Could not load <code>code/calibration.json</code> ` +
       `(${err.message}). Showing generic reference-build numbers instead. ` +
-      `Run <code>code/calibrate.py</code>, then serve this page over HTTP from ` +
-      `the repo root (e.g. <code>python3 -m http.server</code>) so the fetch works.</div>`;
+      `Run <code>code/calibrate.py</code>, then serve this page over HTTP from the repo ` +
+      `root with <code>.venv/bin/python3 code/calibrate_server.py</code> so the fetch ` +
+      `works (a bare <code>python3 -m http.server</code> fixes this fetch too, but won't ` +
+      `render the doc pages linked above).</div>`;
   }
   renderCalibration();
 }
@@ -1712,6 +1737,25 @@ function initMPC() {
   recompute();
 }
 
+/* ---------------- Site nav: doc links + hardware availability ---------------- */
+async function initSiteNav() {
+  const ok = await checkHwServer();
+  const warn = document.getElementById("nav-robot-warn");
+  if (!ok) {
+    // No code/calibrate_server.py -- its server-side markdown rendering isn't
+    // available either, so route the doc links through the client-side
+    // reader instead of the raw (unrendered) .md paths.
+    document.querySelectorAll("#site-nav a[data-doc]").forEach(a => {
+      a.href = `reader.html?src=${encodeURIComponent(a.dataset.doc)}`;
+    });
+    const btn = document.getElementById("nav-robot-btn");
+    btn.classList.add("disabled");
+    btn.removeAttribute("href");
+    warn.textContent = "Needs code/calibrate_server.py running to connect to a robot.";
+    warn.style.display = "block";
+  }
+}
+
 /* ---------------- Tab navigation ---------------- */
 function selectTab(name) {
   const btn = document.querySelector(`#tabnav button[data-tab="${name}"]`);
@@ -1747,6 +1791,7 @@ function initTabs() {
   initMPC();
   initRecalibration();
   initTabs();
+  initSiteNav();
 })();
 </script>
 </body>

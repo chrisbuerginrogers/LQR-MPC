@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQR/MPC docs</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel-bg: #ffffff; --fg: #1b1e24; --muted: #5b6270;
+    --grid: #e2e4e9; --border: #d8dbe1; --accent: #2563eb; --ok: #157a3d; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel-bg: #1c1f26; --fg: #e7e9ee; --muted: #9aa2b1;
+      --grid: #333844; --border: #333844; --accent: #6ea8fe; --ok: #4fd17a; --bad: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.6; }
+  .site-nav { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--panel-bg); }
+  .site-nav a { color: var(--muted); text-decoration: none; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; }
+  .site-nav a:hover { background: var(--grid); color: var(--fg); }
+  .site-nav a.active { background: var(--accent); color: #fff; }
+  .site-nav a.robot-btn { margin-left: auto; background: var(--ok); color: #fff; font-weight: 600; }
+  .site-nav .fallback-note { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
+  main.doc { max-width: 78ch; margin: 0 auto; padding: 28px 20px 60px 20px; }
+  main.doc h1, main.doc h2, main.doc h3 { line-height: 1.25; }
+  main.doc h1 { font-size: 26px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  main.doc h2 { font-size: 20px; margin-top: 2.2em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  main.doc h3 { font-size: 16px; margin-top: 1.8em; }
+  main.doc a { color: var(--accent); }
+  main.doc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em;
+    background: var(--grid); padding: 0.15em 0.4em; border-radius: 4px; }
+  main.doc pre { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; overflow-x: auto; }
+  main.doc pre code { background: none; padding: 0; }
+  main.doc blockquote { border-left: 3px solid var(--accent); margin: 1.2em 0; padding: 4px 16px;
+    background: var(--panel-bg); border-radius: 0 6px 6px 0; color: var(--muted); }
+  main.doc table { border-collapse: collapse; width: 100%; margin: 1.2em 0; font-size: 14px;
+    display: block; overflow-x: auto; }
+  main.doc th, main.doc td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  main.doc th { background: var(--panel-bg); }
+  main.doc hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  main.doc img { max-width: 100%; border-radius: 8px; }
+  .banner { background: #fff3cd; color: #664d03; border: 1px solid #ffe69c;
+    border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 20px; }
+  @media (prefers-color-scheme: dark) {
+    .banner { background: #3a2f10; color: #ffd97a; border-color: #5c4a10; }
+  }
+</style>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]] }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+</head>
+<body>
+
+<div class="site-nav" id="site-nav"></div>
+<main class="doc" id="doc-main"><p>Loading…</p></main>
+
+<script>
+"use strict";
+
+/* This page exists so README.md/docs/*.md read as formatted pages under
+   ANY static file server (python3 -m http.server, GitHub Pages, ...), not
+   just code/calibrate_server.py -- which has its own, separate, server-side
+   render pipeline (Python-Markdown + pymdownx.arithmatex) and is what serves
+   README.md/docs/*.md directly when it's running. This page never talks to
+   that server; it fetches the raw .md text itself and renders it client-side
+   with marked.js, protecting $...$/$$...$$ math from marked's own inline
+   parser the same way pymdownx.arithmatex protects it server-side, then lets
+   MathJax typeset it. */
+
+const NAV_LINKS = [
+  ["/README.md", "Home"],
+  ["/docs/00-sim.md", "00 · sim.py"],
+  ["/docs/01-lqr.md", "01 · LQR"],
+  ["/docs/02-mpc.md", "02 · MPC"],
+  ["/docs/03-lqr-vs-mpc.md", "03 · LQR vs MPC"],
+];
+
+function titleFor(path) {
+  const hit = NAV_LINKS.find(([href]) => href === path);
+  return hit ? hit[1] : path.split("/").pop();
+}
+
+function renderNav(activePath) {
+  const nav = document.getElementById("site-nav");
+  const links = NAV_LINKS.map(([href, label]) => {
+    const cls = href === activePath ? ' class="active"' : "";
+    return `<a href="reader.html?src=${encodeURIComponent(href)}"${cls}>${label}</a>`;
+  });
+  links.push('<a href="/docs/interactive.html">Interactive</a>');
+  links.push('<a href="/docs/interactive.html#robot" class="robot-btn">\u{1F50C} Connect to robot</a>');
+  links.push('<span class="fallback-note">Client-side reader (no code/calibrate_server.py needed) ' +
+    '— hardware buttons live on the Interactive page.</span>');
+  nav.innerHTML = links.join("\n");
+}
+
+/* -- protect $...$/$$...$$ from marked's own markdown parsing, same idea as
+      pymdownx.arithmatex server-side: pull math out before parsing, put the
+      literal TeX back into the HTML afterwards. -- */
+function extractMath(md) {
+  const store = [];
+  let out = md.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
+    store.push(`\\[${tex}\\]`);
+    return `@@MATH${store.length - 1}@@`;
+  });
+  // allow inline math to wrap across a single line break (markdown source is
+  // hand-wrapped at ~80 cols) but not span a blank line into another paragraph
+  out = out.replace(/\$((?:[^\$\n]|\n(?!\n))+?)\$/g, (_, tex) => {
+    store.push(`\\(${tex}\\)`);
+    return `@@MATH${store.length - 1}@@`;
+  });
+  return { text: out, store };
+}
+function restoreMath(html, store) {
+  return html.replace(/@@MATH(\d+)@@/g, (_, i) => store[Number(i)]);
+}
+
+/* -- heading ids, matching markdown.extensions.toc's slugify closely enough
+      for this repo's existing #anchor links (lowercase, drop punctuation,
+      each whitespace char -> '-', no collapsing of repeats) -- */
+function slugify(raw) {
+  return raw.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s/g, "-");
+}
+
+function makeRenderer() {
+  const renderer = new marked.Renderer();
+  const seen = {};
+  renderer.heading = function (text, level, raw) {
+    let slug = slugify(raw);
+    if (seen[slug] !== undefined) { seen[slug]++; slug = `${slug}-${seen[slug]}`; }
+    else { seen[slug] = 0; }
+    return `<h${level} id="${slug}">${text}</h${level}>\n`;
+  };
+  return renderer;
+}
+
+/* -- rewrite in-content links to other .md files so multi-hop navigation
+      stays inside this client-side reader instead of hitting a raw .md
+      (which would show up as plain text again one hop later) -- */
+function rewriteMdLinks(container, baseURL) {
+  container.querySelectorAll("a[href]").forEach(a => {
+    const href = a.getAttribute("href");
+    if (!/^https?:\/\//i.test(href) && /\.md(#.*)?$/i.test(href)) {
+      const target = new URL(href, baseURL);
+      a.href = `reader.html?src=${encodeURIComponent(target.pathname)}${target.hash}`;
+    }
+  });
+}
+
+async function main() {
+  const params = new URLSearchParams(location.search);
+  const src = params.get("src") || "/README.md";
+  renderNav(src);
+  document.title = titleFor(src) + " — LQR/MPC";
+
+  const container = document.getElementById("doc-main");
+  let mdText;
+  try {
+    const res = await fetch(src, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    mdText = await res.text();
+  } catch (err) {
+    container.innerHTML =
+      `<div class="banner">Could not load <code>${src}</code> (${err.message}). ` +
+      `Make sure you're viewing this over HTTP, not a <code>file://</code> URL ` +
+      `(e.g. <code>python3 -m http.server</code> from the repo root, then open ` +
+      `<code>/docs/reader.html</code>).</div>`;
+    return;
+  }
+
+  const { text, store } = extractMath(mdText);
+  const rawHtml = marked.parse(text, { renderer: makeRenderer(), gfm: true, breaks: false });
+  container.innerHTML = restoreMath(rawHtml, store);
+  container.className = "doc";
+
+  rewriteMdLinks(container, new URL(src, location.href));
+
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    await MathJax.typesetPromise([container]);
+  }
+  if (location.hash) {
+    const el = document.getElementById(location.hash.slice(1));
+    if (el) el.scrollIntoView();
+  }
+}
+
+main();
+</script>
+</body>
+</html>
